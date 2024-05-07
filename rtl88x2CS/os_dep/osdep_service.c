@@ -304,7 +304,7 @@ void *_rtw_malloc(u32 sz)
 		pbuf = dvr_malloc(sz);
 	else
 #endif
-		pbuf = kmalloc(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+		pbuf = kmalloc(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL | __GFP_RETRY_MAYFAIL);
 
 #endif
 #ifdef PLATFORM_FREEBSD
@@ -474,7 +474,7 @@ nodata:
 inline struct sk_buff *_rtw_skb_alloc(u32 sz)
 {
 #ifdef PLATFORM_LINUX
-	return __dev_alloc_skb(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+	return __dev_alloc_skb(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL | __GFP_RETRY_MAYFAIL);
 #endif /* PLATFORM_LINUX */
 
 #ifdef PLATFORM_FREEBSD

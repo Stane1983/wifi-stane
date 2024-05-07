@@ -18,7 +18,7 @@
 #if (BT_SUPPORT == 1 && COEX_SUPPORT == 1)
 
 static u8 *trace_buf = &gl_btc_trace_buf[0];
-static const u32 coex_ver_date = 20211210;
+static const u32 coex_ver_date = 20230210;
 static const u32 coex_ver = 0x27;
 
 static u8
@@ -220,7 +220,7 @@ rtw_btc_limited_wl(struct btc_coexist *btc)
 		if ((coex_sta->bt_ble_hid_exist || coex_sta->bt_hfp_exist) &&
 		    coex_sta->wl_iot_peer != BTC_IOT_PEER_ATHEROS &&
 		    btc->board_info.btdm_ant_num == 1)
-			rtw_btc_limited_rx(btc, NM_EXCU, FALSE, TRUE, 4);
+			rtw_btc_limited_rx(btc, NM_EXCU, FALSE, TRUE, 8);
 		else
 			rtw_btc_limited_rx(btc, NM_EXCU, FALSE, TRUE, 64);
 	}
@@ -2594,13 +2594,13 @@ static void rtw_btc_action_bt_hid(struct btc_coexist *btc)
 			table_case = 33;
 			tdma_case = 0;
 		} else if (coex_sta->bt_ble_exist) { /* RCU */
-			table_case = 26;
+			table_case = 8;
 			tdma_case = 2;
 		} else { /* Legacy HID  */
 			if (coex_sta->bt_a2dp_active ||
 			    coex_sta->bt_a2dp_active_remain) {
 				table_case = 9;
-				tdma_case = 18;
+				tdma_case = 4;
 			} else if (coex_sta->bt_profile_num == 1 &&
 				   (coex_sta->bt_multi_link &&
 				   (is_bt_ctr_hi ||
@@ -2623,8 +2623,8 @@ static void rtw_btc_action_bt_hid(struct btc_coexist *btc)
 				tdma_case = 27;
 			} else if (coex_sta->bt_ble_hid_exist &&
 				   coex_sta->wl_gl_busy) {
-				table_case = 32;
-				tdma_case = 9;
+				table_case = 8;
+				tdma_case = 1;
 			} else {
 				table_case = 9;
 				tdma_case = 9;
@@ -2632,13 +2632,13 @@ static void rtw_btc_action_bt_hid(struct btc_coexist *btc)
 		}
 	} else { /* Non-Shared-Ant */
 		if (coex_sta->bt_ble_exist) { /* BLE */
-			table_case = 110;
+			table_case = 105;
 			tdma_case = 105;
 		} else if (coex_sta->bt_a2dp_active) {
-			table_case = 113;
-			tdma_case = 118;
+			table_case = 112;
+			tdma_case = 112;
 		} else {
-			table_case = 113;
+			table_case = 112;
 			tdma_case = 104;
 		}
 	}
@@ -2678,8 +2678,8 @@ static void rtw_btc_action_bt_a2dp(struct btc_coexist *btc)
 		else
 			tdma_case = 13;
 	} else { /* Non-Shared-Ant */
-		table_case = 121;
-		tdma_case = 113;
+		table_case = 112;
+		tdma_case = 112;
 	}
 
 	rtw_btc_table(btc, NM_EXCU, table_case);
@@ -2782,7 +2782,7 @@ static void rtw_btc_action_bt_a2dp_hid(struct btc_coexist *btc)
 
 	if (btc->board_info.btdm_ant_num == 1) { /* Shared-Ant */
 		if (coex_sta->bt_ble_exist) {
-			table_case = 26; /* for RCU */
+			table_case = 10; /* for RCU */
 		} else if (coex_sta->bt_418_hid_exist) { /*for 4/18 HID*/
 			table_case = 9;
 			tableB = 0x5a5a5aaa;
@@ -2792,7 +2792,7 @@ static void rtw_btc_action_bt_a2dp_hid(struct btc_coexist *btc)
 		}
 
 		if (coex_sta->wl_connecting || !coex_sta->wl_gl_busy) {
-			tdma_case = 14;
+			tdma_case = 13;
 		} else if (coex_sta->bt_418_hid_exist) {
 			is_toggle_table = TRUE;
 			tdma_case = 23;
@@ -2801,11 +2801,11 @@ static void rtw_btc_action_bt_a2dp_hid(struct btc_coexist *btc)
 		}
 	} else { /* Non-Shared-Ant */
 		if (coex_sta->bt_ble_exist)
-			table_case = 110;
+			table_case = 112;
 		else
-			table_case = 121;
+			table_case = 112;
 
-		tdma_case = 113;
+		tdma_case = 112;
 	}
 
 	rtw_btc_table(btc, NM_EXCU, table_case);

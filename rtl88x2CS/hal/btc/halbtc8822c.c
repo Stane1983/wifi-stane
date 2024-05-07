@@ -157,64 +157,64 @@ static const struct btc_tdma_para tdma_nsant_8822c[] = {
 static const struct btc_rf_para rf_para_tx_8822c[] = {
 				{0, 0, FALSE, 7},  /* for normal */
 				{0, 16, FALSE, 7}, /* for WL-CPT */
-				{16, 4, TRUE, 4},  /* 2 for RCU SDR */
-				{15, 5, TRUE, 4},
-				{7, 8, TRUE, 4},
+				{16, 4, TRUE, 5},  /* 2 for RCU SDR */
+				{15, 5, TRUE, 5},
+				{7, 8, TRUE, 5},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 4}, /* 6 for RCU OFC */
-				{15, 5, TRUE, 4},
-				{7, 8, TRUE, 4},
+				{16, 4, TRUE, 5}, /* 6 for RCU OFC */
+				{15, 5, TRUE, 5},
+				{7, 8, TRUE, 5},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 4}, /* 10 for A2DP SDR */
-				{15, 5, TRUE, 4},
-				{7, 8, TRUE, 4},
+				{16, 4, TRUE, 5}, /* 10 for A2DP SDR */
+				{15, 5, TRUE, 5},
+				{7, 8, TRUE, 5},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 4}, /* 14 for A2DP OFC */
-				{15, 5, TRUE, 4},
-				{7, 8, TRUE, 4},
+				{16, 4, TRUE, 5}, /* 14 for A2DP OFC */
+				{15, 5, TRUE, 5},
+				{7, 8, TRUE, 5},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 4}, /* 18 for A2DP+RCU SDR */
-				{15, 5, TRUE, 4},
-				{7, 8, TRUE, 4},
+				{16, 4, TRUE, 5}, /* 18 for A2DP+RCU SDR */
+				{15, 5, TRUE, 5},
+				{7, 8, TRUE, 5},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 4}, /* 22 for A2DP+RCU OFC */
-				{15, 5, TRUE, 4},
-				{7, 8, TRUE, 4},
+				{16, 4, TRUE, 5}, /* 22 for A2DP+RCU OFC */
+				{15, 5, TRUE, 5},
+				{7, 8, TRUE, 5},
 				{6, 10, TRUE, 4} };
 
 static const struct btc_rf_para rf_para_rx_8822c[] = {
 				{0, 0, FALSE, 7},  /* for normal */
 				{0, 16, FALSE, 7}, /* for WL-CPT */
-				{14, 5, TRUE, 5}, /* 2 for RCU SDR */
-				{13, 6, TRUE, 5},
-				{6, 9, TRUE, 5},
+				{14, 5, TRUE, 7}, /* 2 for RCU SDR */
+				{13, 6, TRUE, 7},
+				{6, 9, TRUE, 7},
 				{4, 11, TRUE, 5},
-				{16, 4, TRUE, 4}, /* 6 for RCU OFC */
-				{15, 5, TRUE, 4},
-				{7, 8, TRUE, 4},
+				{16, 4, TRUE, 7}, /* 6 for RCU OFC */
+				{15, 5, TRUE, 7},
+				{7, 8, TRUE, 7},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 4}, /* 10 for A2DP SDR */
-				{15, 5, TRUE, 4},
-				{7, 8, TRUE, 4},
+				{0, 4, TRUE, 7}, /* 10 for A2DP SDR */
+				{0, 5, TRUE, 7},
+				{7, 8, TRUE, 7},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 4}, /* 14 for A2DP OFC */
-				{15, 5, TRUE, 4},
-				{7, 8, TRUE, 4},
+				{16, 4, TRUE, 5}, /* 14 for A2DP OFC */
+				{15, 5, TRUE, 5},
+				{7, 8, TRUE, 5},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 4}, /* 18 for A2DP+RCU SDR */
-				{15, 5, TRUE, 4},
-				{7, 8, TRUE, 4},
+				{16, 4, TRUE, 7}, /* 18 for A2DP+RCU SDR */
+				{15, 5, TRUE, 7},
+				{7, 8, TRUE, 5},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 4}, /* 22 for A2DP+RCU OFC */
-				{15, 5, TRUE, 4},
-				{7, 8, TRUE, 4},
+				{0, 4, TRUE, 5}, /* 22 for A2DP+RCU OFC */
+				{0, 5, TRUE, 5},
+				{7, 8, TRUE, 5},
 				{6, 10, TRUE, 4} };
 
 const struct btc_5g_afh_map afh_5g_8822c[] = { {0, 0, 0} };
 
 const struct btc_chip_para btc_chip_para_8822c = {
 	"8822c",				/*.chip_name */
-	20211210,				/*.para_ver_date */
+	20230210,				/*.para_ver_date */
 	0x27,					/*.para_ver */
 	0x20,					/* bt_desired_ver */
 	0x7001c,				/* wl_desired_ver */
