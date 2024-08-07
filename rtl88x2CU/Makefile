@@ -11,6 +11,7 @@ EXTRA_CFLAGS += -Wno-unused-variable
 EXTRA_CFLAGS += -Wno-declaration-after-statement
 EXTRA_CFLAGS += -Wno-unknown-directives
 EXTRA_CFLAGS += -Wno-unknown-warning-option
+EXTRA_CFLAGS += -Wno-incompatible-pointer-types
 #EXTRA_CFLAGS += -Wno-unused-value
 #EXTRA_CFLAGS += -Wno-unused-label
 #EXTRA_CFLAGS += -Wno-unused-parameter
