@@ -309,6 +309,15 @@ osl_attach(void *pdev, uint bustype, bool pkttag
 	}
 #endif /* DHD_MAP_LOGGING */
 
+#ifdef DHD_USE_KMEM_CACHE_USERCOPY
+	osh->ioctl_buf_cache = kmem_cache_create_usercopy(
+		"dhd_ioctl_buf", KMEM_CACHE_USERCOPY_MAXLEN_32K, 0,
+		SLAB_HWCACHE_ALIGN, 0, KMEM_CACHE_USERCOPY_MAXLEN_32K, NULL);
+	if (osh->ioctl_buf_cache == NULL) {
+		OSL_PRINT(("%s: Failed to create ioctl_buf_cache\n", __FUNCTION__));
+	}
+#endif /* DHD_USE_KMEM_CACHE_USERCOPY */
+
 #if defined(CUSTOMER_HW_AMLOGIC) && defined(USE_AML_PCIE_TEE_MEM)
 	osh->tee_mem_dev = get_pcie_reserved_mem_dev();
 	if (osh->tee_mem_dev) {
@@ -353,6 +362,11 @@ osl_detach(osl_t *osh)
 #ifdef DHD_MAP_LOGGING
 	osl_dma_map_log_deinit(osh);
 #endif /* DHD_MAP_LOGGING */
+
+#ifdef DHD_USE_KMEM_CACHE_USERCOPY
+	if (osh->ioctl_buf_cache)
+		kmem_cache_destroy(osh->ioctl_buf_cache);
+#endif /* DHD_USE_KMEM_CACHE_USERCOPY */
 
 	ASSERT(osh->magic == OS_HANDLE_MAGIC);
 	atomic_sub(1, &osh->cmn->refcount);
@@ -696,6 +710,26 @@ osl_dma_mfree(osl_t *osh, void *addr, uint size)
 	addr = NULL;
 }
 
+#ifdef DHD_USE_KMEM_CACHE_USERCOPY
+void *
+osl_kmem_cache_alloc_usercopy(osl_t *osh)
+{
+	if (!osh->ioctl_buf_cache)
+		return NULL;
+
+	return kmem_cache_alloc(osh->ioctl_buf_cache, GFP_KERNEL);
+}
+
+void
+osl_kmem_cache_free_usercopy(osl_t *osh, void *addr)
+{
+	if (!osh->ioctl_buf_cache)
+		return;
+
+	kmem_cache_free(osh->ioctl_buf_cache, addr);
+}
+#endif /* DHD_USE_KMEM_CACHE_USERCOPY */
+
 #ifdef BCMDBG_MEM
 /* In BCMDBG_MEM configurations osl_vmalloc is only used internally in
  * the implementation of osl_debug_vmalloc.  Because we are using the GCC
@@ -783,10 +817,11 @@ osl_kvmalloc(osl_t *osh, uint size)
 
 	flags = CAN_SLEEP() ? GFP_KERNEL: GFP_ATOMIC;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0))
-	if ((addr = kmalloc(size, flags)) == NULL) {
+	if ((addr = kmalloc(size, flags)) == NULL)
 #else
-	if ((addr = kvmalloc(size, flags)) == NULL) {
+	if ((addr = kvmalloc(size, flags)) == NULL)
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0) */
+	{
 		if (osh)
 			osh->failed++;
 		return (NULL);

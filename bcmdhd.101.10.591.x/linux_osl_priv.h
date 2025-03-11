@@ -191,6 +191,9 @@ struct osl_info {
 	void *dhd_map_log;
 	void *dhd_unmap_log;
 #endif /* DHD_MAP_LOGGING */
+#ifdef DHD_USE_KMEM_CACHE_USERCOPY
+	struct kmem_cache *ioctl_buf_cache;
+#endif /* DHD_USE_KMEM_CACHE_USERCOPY */
 #if defined(CUSTOMER_HW_AMLOGIC) && defined(USE_AML_PCIE_TEE_MEM)
 	struct device *tee_mem_dev;
 #endif /* CUSTOMER_HW_AMLOGIC && USE_AML_PCIE_TEE_MEM */

@@ -54,6 +54,10 @@ do { \
 //#define BCMDHD_UNUSE_MEM
 #endif
 
+#ifndef BCMDHD_MDRIVER
+//#define BCMDHD_MDRIVER
+#endif
+
 #ifndef MAX_NUM_ADAPTERS
 #define MAX_NUM_ADAPTERS	1
 #endif

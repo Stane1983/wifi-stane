@@ -345,13 +345,13 @@ static void bcmsdh_sdmmc_complete(struct device *pdev)
 
 	printf("%s Enter func->num=%d\n", __FUNCTION__, func->num);
 	if (func->num != 2)
-		return ;
+		return;
 
 	sdioh = sdio_get_drvdata(func);
 	bcmsdh_complete(sdioh->bcmsdh);
 
 	printf("%s Exit\n", __FUNCTION__);
-	return ;
+	return;
 }
 #endif /* DEVICE_PM_CALLBACK */
 

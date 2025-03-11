@@ -154,7 +154,9 @@ static int dhdsdio_resume(void *context);
 #define MAX_MEMBLOCK  (32 * 1024)	/* Block size used for downloading of dongle image */
 
 #define MAX_DATA_BUF	(64 * 1024)	/* Must be large enough to hold biggest possible glom */
-#define MAX_MEM_BUF	4096
+#ifdef STATIC_MEM_BUF
+#define MAX_MEM_BUF	2048
+#endif /* STATIC_MEM_BUF */
 
 #ifndef DHD_FIRSTREAD
 #define DHD_FIRSTREAD   32
@@ -532,7 +534,9 @@ typedef struct dhd_bus {
 #ifdef PKT_STATICS
 	struct pkt_statics tx_statics;
 #endif
+#ifdef STATIC_MEM_BUF
 	uint8		*membuf;		/* Buffer for dhdsdio_membytes */
+#endif /* STATIC_MEM_BUF */
 #ifdef CONSOLE_DPC
 	char		cons_cmd[16];
 #endif
@@ -3755,7 +3759,13 @@ dhdsdio_membytes(dhd_bus_t *bus, bool write, uint32 address, uint8 *data, uint s
 	int bcmerror = 0;
 	uint32 sdaddr;
 	uint dsize;
-	uint8 *pdata;
+	uint8 *pdata = data;
+#ifdef STATIC_MEM_BUF
+	bool do_membuf = FALSE;
+
+	if (size < MAX_MEM_BUF)
+		do_membuf = TRUE;
+#endif /* STATIC_MEM_BUF */
 
 	/* In remap mode, adjust address beyond socram and redirect
 	 * to devram at SOCDEVRAM_BP_ADDR since remap address > orig_ramsize
@@ -3784,19 +3794,23 @@ dhdsdio_membytes(dhd_bus_t *bus, bool write, uint32 address, uint8 *data, uint s
 		DHD_INFO(("%s: %s %d bytes at offset 0x%08x in window 0x%08x\n",
 		          __FUNCTION__, (write ? "write" : "read"), dsize, sdaddr,
 		          (address & SBSDIO_SBWINDOW_MASK)));
-		if (dsize <= MAX_MEM_BUF) {
-			pdata = bus->membuf;
+#ifdef STATIC_MEM_BUF
+		if (do_membuf) {
 			if (write)
 				memcpy(bus->membuf, data, dsize);
+			pdata = bus->membuf;
 		} else {
 			pdata = data;
 		}
+#endif /* STATIC_MEM_BUF */
 		if ((bcmerror = bcmsdh_rwdata(bus->sdh, write, sdaddr, pdata, dsize))) {
 			DHD_ERROR(("%s: membytes transfer failed\n", __FUNCTION__));
 			break;
 		}
-		if (dsize <= MAX_MEM_BUF && !write)
-			memcpy(data, bus->membuf, dsize);
+#ifdef STATIC_MEM_BUF
+		if (do_membuf && !write)
+			memcpy(data, pdata, dsize);
+#endif /* STATIC_MEM_BUF */
 
 		/* Adjust for next transfer (if any) */
 		if ((size -= dsize)) {
@@ -5295,11 +5309,7 @@ dhdsdio_write_vars(dhd_bus_t *bus)
 		MFREE(bus->dhd->osh, vbuffer, varsize);
 	}
 
-#ifdef MINIME
-	phys_size = bus->ramsize;
-#else
 	phys_size = REMAP_ENAB(bus) ? bus->ramsize : bus->orig_ramsize;
-#endif
 
 	phys_size += bus->dongle_ram_base;
 
@@ -10076,6 +10086,7 @@ dhdsdio_probe_malloc(dhd_bus_t *bus, osl_t *osh, void *sdh)
 			DHD_OS_PREFREE(bus->dhd, bus->rxbuf, bus->rxblen);
 		goto fail;
 	}
+#ifdef STATIC_MEM_BUF
 	/* Allocate buffer to membuf */
 	bus->membuf = MALLOC(osh, MAX_MEM_BUF);
 	if (bus->membuf == NULL) {
@@ -10093,6 +10104,7 @@ dhdsdio_probe_malloc(dhd_bus_t *bus, osl_t *osh, void *sdh)
 		goto fail;
 	}
 	memset(bus->membuf, 0, MAX_MEM_BUF);
+#endif /* STATIC_MEM_BUF */
 
 	/* Align the buffer */
 	if ((uintptr)bus->databuf % DHD_SDALIGN)
@@ -10213,15 +10225,12 @@ dhdsdio_probe_init(dhd_bus_t *bus, osl_t *osh, void *sdh)
 
 int
 dhd_bus_download_firmware(struct dhd_bus *bus, osl_t *osh,
-                          char *pfw_path, char *pnv_path,
-                          char *pclm_path, char *pconf_path)
+				char *pfw_path, char *pnv_path)
 {
 	int ret;
 
 	bus->fw_path = pfw_path;
 	bus->nv_path = pnv_path;
-	bus->dhd->clm_path = pclm_path;
-	bus->dhd->conf_path = pconf_path;
 
 	ret = dhdsdio_download_firmware(bus, osh, bus->sdh);
 
@@ -10249,12 +10258,6 @@ dhd_set_bus_params(struct dhd_bus *bus)
 		bus->txglomsize = bus->dhd->conf->txglomsize;
 	}
 	bus->idletime = dhd_idletime;
-#ifdef MINIME
-	if (bus->dhd->conf->fw_type == FW_TYPE_MINIME) {
-		bus->ramsize = bus->dhd->conf->ramsize;
-		printf("%s: set ramsize 0x%x\n", __FUNCTION__, bus->ramsize);
-	}
-#endif
 #ifdef DYNAMIC_MAX_HDR_READ
 	if (bus->dhd->conf->max_hdr_read <= 0) {
 		bus->dhd->conf->max_hdr_read = MAX_HDR_READ;
@@ -10391,10 +10394,12 @@ dhdsdio_release_malloc(dhd_bus_t *bus, osl_t *osh)
 #endif
 	}
 
+#ifdef STATIC_MEM_BUF
 	if (bus->membuf) {
 		MFREE(osh, bus->membuf, MAX_MEM_BUF);
 		bus->membuf = NULL;
 	}
+#endif /* STATIC_MEM_BUF */
 
 	if (bus->vars && bus->varsz) {
 		MFREE(osh, bus->vars, bus->varsz);
@@ -10552,10 +10557,11 @@ dhdsdio_suspend(void *context)
 		bus->dhd->busstate = DHD_BUS_DATA;
 		/* resume all interface network queue. */
 		dhd_txflowcontrol(bus->dhd, ALL_INTERFACES, OFF);
+		bus->dhd->hostsleep = HOSTSLEEP_CLEAR;
 	} else {
 		bus->last_suspend_end_time = OSL_LOCALTIME_NS();
+		bus->dhd->hostsleep = HOSTSLEEP_DHD_SET;
 	}
-	bus->dhd->hostsleep = 2;
 	DHD_BUS_BUSY_CLEAR_SUSPEND_IN_PROGRESS(bus->dhd);
 	dhd_os_busbusy_wake(bus->dhd);
 	DHD_LINUX_GENERAL_UNLOCK(bus->dhd, flags);
@@ -10587,7 +10593,7 @@ dhdsdio_resume(void *context)
 
 	DHD_LINUX_GENERAL_LOCK(bus->dhd, flags);
 	DHD_BUS_BUSY_CLEAR_RESUME_IN_PROGRESS(bus->dhd);
-	bus->dhd->hostsleep = 0;
+	bus->dhd->hostsleep = HOSTSLEEP_CLEAR;
 	bus->dhd->busstate = DHD_BUS_DATA;
 	dhd_os_busbusy_wake(bus->dhd);
 	/* resume all interface network queue. */
@@ -10758,6 +10764,31 @@ err:
 }
 #endif /* BCMEMBEDIMAGE */
 
+#ifdef CHECK_DOWNLOAD_FW
+static int
+dhd_block_compare(uint8 *block_w, uint8 *block_r, int blksize, int ttlsize)
+{
+	int remain = ttlsize, ret = BCME_OK, i = 1, size;
+
+	while (remain > 0) {
+		size = MIN(remain, blksize);
+		if (memcmp(block_r, block_w, size)) {
+			DHD_ERROR(("%s: the %dth block(%d bytes) is corrupted\n",
+				__FUNCTION__, i, size));
+			prhex("write block", block_w, size);
+			prhex("read block", block_r, size);
+			return BCME_ERROR;
+		}
+		i++;
+		block_w += size;
+		block_r += size;
+		remain -= size;
+	}
+
+	return ret;
+}
+#endif
+
 #ifdef DHD_LINUX_STD_FW_API
 static int
 dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
@@ -10767,7 +10798,7 @@ dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 	int len;
 	uint8 *memblock = NULL, *memptr;
 #ifdef CHECK_DOWNLOAD_FW
-	uint8 *memptr_tmp = NULL; // terence: check downloaded firmware is correct
+	uint8 *memblock_r = NULL, *memptr_r = NULL;
 #endif
 	uint memblock_size = MEMBLOCK;
 #ifdef DHD_DEBUG_DOWNLOADTIME
@@ -10807,14 +10838,15 @@ dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 	}
 	if ((uint32)(uintptr)memblock % DHD_SDALIGN)
 		memptr += (DHD_SDALIGN - ((uint32)(uintptr)memblock % DHD_SDALIGN));
-
 #ifdef CHECK_DOWNLOAD_FW
 	if (bus->dhd->conf->fwchk) {
-		memptr_tmp = MALLOC(bus->dhd->osh, MEMBLOCK + DHD_SDALIGN);
-		if (memptr_tmp == NULL) {
+		memptr_r = memblock_r = MALLOC(bus->dhd->osh, memblock_size + DHD_SDALIGN);
+		if (memblock_r == NULL) {
 			DHD_ERROR(("%s: Failed to allocate memory %d bytes\n", __FUNCTION__, MEMBLOCK));
 			goto err;
 		}
+		if ((uint32)(uintptr)memblock_r % DHD_SDALIGN)
+			memptr_r += (DHD_SDALIGN - ((uint32)(uintptr)memblock_r % DHD_SDALIGN));
 	}
 #endif
 
@@ -10841,28 +10873,28 @@ dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 		bcmerror = dhdsdio_membytes(bus, TRUE, offset, (uint8 *)memptr, len);
 		if (bcmerror) {
 			DHD_ERROR(("%s: error %d on writing %d membytes at 0x%08x\n",
-			        __FUNCTION__, bcmerror, memblock_size, offset));
+			        __FUNCTION__, bcmerror, len, offset));
 			goto err;
 		}
-
 #ifdef CHECK_DOWNLOAD_FW
 		if (bus->dhd->conf->fwchk) {
-			bcmerror = dhdsdio_membytes(bus, FALSE, offset, memptr_tmp, len);
+			bcmerror = dhdsdio_membytes(bus, FALSE, offset, memptr_r, len);
 			if (bcmerror) {
 				DHD_ERROR(("%s: error %d on reading %d membytes at 0x%08x\n",
-				        __FUNCTION__, bcmerror, MEMBLOCK, offset));
+					__FUNCTION__, bcmerror, len, offset));
 				goto err;
 			}
-			if (memcmp(memptr_tmp, memptr, len)) {
-				DHD_ERROR(("%s: Downloaded image is corrupted at 0x%08x\n", __FUNCTION__, offset));
-				bcmerror = BCME_ERROR;
+			bcmerror = dhd_block_compare(memptr, memptr_r, 64, len);
+			if (bcmerror) {
+				DHD_ERROR(("%s: Downloaded image %d membytes is corrupted at 0x%08x\n",
+					__FUNCTION__, len, offset));
 				goto err;
-			} else
-				DHD_INFO(("%s: Download, Upload and compare succeeded.\n", __FUNCTION__));
+			}
+			DHD_INFO(("%s: Download, Upload and compare succeeded.\n",
+				__FUNCTION__));
 		}
 #endif
-
-		offset += memblock_size;
+		offset += len;
 #ifdef DHD_DEBUG_DOWNLOADTIME
 		firmware_sz += len;
 #endif
@@ -10886,8 +10918,8 @@ err:
 		MFREE(bus->dhd->osh, memblock, memblock_size + DHD_SDALIGN);
 #ifdef CHECK_DOWNLOAD_FW
 	if (bus->dhd->conf->fwchk) {
-		if (memptr_tmp)
-			MFREE(bus->dhd->osh, memptr_tmp, MEMBLOCK + DHD_SDALIGN);
+		if (memblock_r)
+			MFREE(bus->dhd->osh, memblock_r, memblock_size + DHD_SDALIGN);
 	}
 #endif
 
@@ -10907,7 +10939,7 @@ dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 	void *image = NULL;
 	uint8 *memblock = NULL, *memptr;
 #ifdef CHECK_DOWNLOAD_FW
-	uint8 *memptr_tmp = NULL; // terence: check downloaded firmware is correct
+	uint8 *memblock_r = NULL, *memptr_r = NULL;
 #endif
 	uint memblock_size = MEMBLOCK;
 	uint32 file_size = 0;
@@ -10964,14 +10996,16 @@ dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 	}
 	if ((uint32)(uintptr)memblock % DHD_SDALIGN)
 		memptr += (DHD_SDALIGN - ((uint32)(uintptr)memblock % DHD_SDALIGN));
-
 #ifdef CHECK_DOWNLOAD_FW
 	if (bus->dhd->conf->fwchk) {
-		memptr_tmp = MALLOC(bus->dhd->osh, MEMBLOCK + DHD_SDALIGN);
-		if (memptr_tmp == NULL) {
-			DHD_ERROR(("%s: Failed to allocate memory %d bytes\n", __FUNCTION__, MEMBLOCK));
+		memptr_r = memblock_r = MALLOC(bus->dhd->osh, memblock_size + DHD_SDALIGN);
+		if (memblock_r == NULL) {
+			DHD_ERROR(("%s: Failed to allocate memory %d bytes\n",
+				__FUNCTION__, memblock_size));
 			goto err;
 		}
+		if ((uint32)(uintptr)memblock_r % DHD_SDALIGN)
+			memptr_r += (DHD_SDALIGN - ((uint32)(uintptr)memblock_r % DHD_SDALIGN));
 	}
 #endif
 
@@ -11000,28 +11034,28 @@ dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 		bcmerror = dhdsdio_membytes(bus, TRUE, offset, memptr, len);
 		if (bcmerror) {
 			DHD_ERROR(("%s: error %d on writing %d membytes at 0x%08x\n",
-			        __FUNCTION__, bcmerror, memblock_size, offset));
+			        __FUNCTION__, bcmerror, len, offset));
 			goto err;
 		}
-
 #ifdef CHECK_DOWNLOAD_FW
 		if (bus->dhd->conf->fwchk) {
-			bcmerror = dhdsdio_membytes(bus, FALSE, offset, memptr_tmp, len);
+			bcmerror = dhdsdio_membytes(bus, FALSE, offset, memptr_r, len);
 			if (bcmerror) {
 				DHD_ERROR(("%s: error %d on reading %d membytes at 0x%08x\n",
-				        __FUNCTION__, bcmerror, MEMBLOCK, offset));
+					__FUNCTION__, bcmerror, len, offset));
 				goto err;
 			}
-			if (memcmp(memptr_tmp, memptr, len)) {
-				DHD_ERROR(("%s: Downloaded image is corrupted at 0x%08x\n", __FUNCTION__, offset));
-				bcmerror = BCME_ERROR;
+			bcmerror = dhd_block_compare(memptr, memptr_r, 64, len);
+			if (bcmerror) {
+				DHD_ERROR(("%s: Downloaded image %d membytes is corrupted at 0x%08x\n",
+					__FUNCTION__, len, offset));
 				goto err;
-			} else
-				DHD_INFO(("%s: Download, Upload and compare succeeded.\n", __FUNCTION__));
+			}
+			DHD_INFO(("%s: Download, Upload and compare succeeded.\n",
+				__FUNCTION__));
 		}
 #endif
-
-		offset += memblock_size;
+		offset += len;
 #ifdef DHD_DEBUG_DOWNLOADTIME
 		firmware_sz += len;
 #endif
@@ -11037,8 +11071,8 @@ err:
 		MFREE(bus->dhd->osh, memblock, memblock_size + DHD_SDALIGN);
 #ifdef CHECK_DOWNLOAD_FW
 	if (bus->dhd->conf->fwchk) {
-		if (memptr_tmp)
-			MFREE(bus->dhd->osh, memptr_tmp, MEMBLOCK + DHD_SDALIGN);
+		if (memblock_r)
+			MFREE(bus->dhd->osh, memblock_r, memblock_size + DHD_SDALIGN);
 	}
 #endif
 
@@ -11958,13 +11992,10 @@ dhd_bus_waitfor_iodrain(dhd_pub_t *dhdp)
 #endif /* (NDIS) */
 
 void
-dhd_bus_update_fw_nv_path(struct dhd_bus *bus, char *pfw_path, char *pnv_path,
-									char *pclm_path, char *pconf_path)
+dhd_bus_update_fw_nv_path(struct dhd_bus *bus, char *pfw_path, char *pnv_path)
 {
 	bus->fw_path = pfw_path;
 	bus->nv_path = pnv_path;
-	bus->dhd->clm_path = pclm_path;
-	bus->dhd->conf_path = pconf_path;
 }
 
 int

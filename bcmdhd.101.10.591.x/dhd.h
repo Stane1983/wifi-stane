@@ -65,7 +65,11 @@
 #include <linux/ethtool.h>
 #include <linux/proc_fs.h>
 #include <asm/uaccess.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
+#include <linux/unaligned.h>
+#else
 #include <asm/unaligned.h>
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0) */
 #include <linux/fs.h>
 #include <linux/namei.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
@@ -1473,6 +1477,7 @@ typedef struct dhd_pub {
 	#error "wlfc thread not enabled"
 #endif /* LINUX */
 #endif /* DHD_WLFC_THREAD */
+	uint32 simutx_limit;
 #endif /* PROP_TXSTATUS */
 #ifdef PNO_SUPPORT
 	void *pno_state;
@@ -1963,10 +1968,6 @@ typedef struct dhd_pub {
 	uint8 pfaoe_enab;
 #endif /* PKT_FILTER_SUPPORT */
 
-#ifdef CSI_SUPPORT
-	struct list_head csi_list;
-	int csi_count;
-#endif /* CSI_SUPPORT */
 	char *clm_path;		/* module_param: path to clm vars file */
 	char *conf_path;		/* module_param: path to config vars file */
 	struct dhd_conf *conf;	/* Bus module handle */
@@ -2650,6 +2651,7 @@ extern void dhd_bus_wakeup_work(dhd_pub_t *dhdp);
 #define WIFI_FEATURE_SCAN_RAND          0x2000000   /* MAC & Prb SN randomization       */
 #define WIFI_FEATURE_SET_TX_POWER_LIMIT 0x4000000   /* Support Tx Power Limit setting   */
 #define WIFI_FEATURE_USE_BODY_HEAD_SAR  0x8000000   /* Support Body/Head Proximity SAR  */
+#define WIFI_FEATURE_DYNAMIC_SET_MAC	0x10000000  /* Support changing MAC address without iface reset(down and up) */
 #define WIFI_FEATURE_SET_LATENCY_MODE   0x40000000  /* Support Latency mode setting     */
 #define WIFI_FEATURE_P2P_RAND_MAC       0x80000000  /* Support P2P MAC randomization    */
 #define WIFI_FEATURE_INVALID            0xFFFFFFFF  /* Invalid Feature                  */
@@ -3729,8 +3731,7 @@ int dhd_ioctl_process(dhd_pub_t *pub, int ifidx, struct dhd_ioctl *ioc, void *da
 extern int
 concate_revision(struct dhd_bus *bus, char *fwpath, char *nvpath);
 #endif /* SUPPORT_MULTIPLE_REVISION */
-void dhd_bus_update_fw_nv_path(struct dhd_bus *bus, char *pfw_path, char *pnv_path,
-											char *pclm_path, char *pconf_path);
+void dhd_bus_update_fw_nv_path(struct dhd_bus *bus, char *pfw_path, char *pnv_path);
 void dhd_set_bus_state(void *bus, uint32 state);
 
 /* Remove proper pkts(either one no-frag pkt or whole fragmented pkts) */
@@ -4030,6 +4031,9 @@ int dhd_get_download_buffer(dhd_pub_t	*dhd, char *file_path, download_type_t com
 void dhd_free_download_buffer(dhd_pub_t	*dhd, void *buffer, int length);
 
 int dhd_download_blob(dhd_pub_t *dhd, unsigned char *buf,
+		uint32 len, char *iovar);
+
+int dhd_download_apf(dhd_pub_t *dhd, unsigned char *buf,
 		uint32 len, char *iovar);
 
 int dhd_download_blob_cached(dhd_pub_t *dhd, char *file_path,

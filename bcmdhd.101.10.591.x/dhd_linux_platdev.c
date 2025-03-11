@@ -306,7 +306,7 @@ int wifi_platform_set_power(wifi_adapter_info_t *adapter, bool on, unsigned long
 #ifdef CONFIG_WIFI_CONTROL_FUNC
 		err = plat_data->set_power(on);
 #else
-		err = plat_data->set_power(on, adapter);
+		err = plat_data->set_power(adapter, on);
 #endif
 	}
 
@@ -341,7 +341,7 @@ int wifi_platform_bus_enumerate(wifi_adapter_info_t *adapter, bool device_presen
 
 	DHD_ERROR(("%s device present %d\n", __FUNCTION__, device_present));
 	if (plat_data->set_carddetect) {
-		err = plat_data->set_carddetect(device_present);
+		err = plat_data->set_carddetect(adapter, device_present);
 	}
 	return err;
 
@@ -360,7 +360,7 @@ int wifi_platform_get_mac_addr(wifi_adapter_info_t *adapter, unsigned char *buf,
 #ifdef CONFIG_WIFI_CONTROL_FUNC
 		return plat_data->get_mac_addr(buf);
 #else
-		return plat_data->get_mac_addr(buf, ifidx);
+		return plat_data->get_mac_addr(adapter, buf, ifidx);
 #endif
 	}
 	return -EOPNOTSUPP;

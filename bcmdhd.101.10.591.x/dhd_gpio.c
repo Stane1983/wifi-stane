@@ -9,15 +9,6 @@
 #include <linux/platform_device.h>
 #endif
 
-#ifdef CONFIG_DHD_USE_STATIC_BUF
-#if defined(BCMDHD_MDRIVER) && !defined(DHD_STATIC_IN_DRIVER)
-extern void *bcmdhd_mem_prealloc(uint bus_type, int index,
-	int section, unsigned long size);
-#else
-extern void *bcmdhd_mem_prealloc(int section, unsigned long size);
-#endif
-#endif /* CONFIG_DHD_USE_STATIC_BUF */
-
 #ifdef BCMDHD_DTS
 /* This is sample code in dts file.
 bcmdhd_wlan {
@@ -27,9 +18,20 @@ bcmdhd_wlan {
 };
 */
 #define DHD_DT_COMPAT_ENTRY		"android,bcmdhd_wlan"
-#define GPIO_WL_REG_ON_PROPNAME		"gpio_wl_reg_on"
-#define GPIO_WL_HOST_WAKE_PROPNAME	"gpio_wl_host_wake"
+#define GPIO_WL_REG_ON_PROPNAME		"gpio_wl_reg_on" ADAPTER_IDX_STR
+#define GPIO_WL_HOST_WAKE_PROPNAME	"gpio_wl_host_wake" ADAPTER_IDX_STR
 #endif
+#define GPIO_WL_REG_ON_NAME 	"WL_REG_ON" ADAPTER_IDX_STR
+#define GPIO_WL_HOST_WAKE_NAME	"WL_HOST_WAKE" ADAPTER_IDX_STR
+
+#ifdef CONFIG_DHD_USE_STATIC_BUF
+#if defined(BCMDHD_MDRIVER) && !defined(DHD_STATIC_IN_DRIVER)
+extern void *bcmdhd_mem_prealloc(uint bus_type, int index,
+	int section, unsigned long size);
+#else
+extern void *bcmdhd_mem_prealloc(int section, unsigned long size);
+#endif
+#endif /* CONFIG_DHD_USE_STATIC_BUF */
 
 #if defined(BCMPCIE) && defined(PCIE_ATU_FIXUP)
 extern void amlogic_pcie_power_on_atu_fixup(void);
@@ -57,7 +59,7 @@ module_param(dhd_pwr_ctrl, int, 0);
 #endif
 
 static int
-dhd_wlan_set_power(int on, wifi_adapter_info_t *adapter)
+dhd_wlan_set_power(wifi_adapter_info_t *adapter, int on)
 {
 	int gpio_wl_reg_on = adapter->gpio_wl_reg_on;
 	int err = 0;
@@ -80,11 +82,11 @@ dhd_wlan_set_power(int on, wifi_adapter_info_t *adapter)
 #ifdef CUSTOMER_HW_AMLOGIC
 #ifdef BCMSDIO
 		extern_wifi_set_enable(0);
-		mdelay(200);
+		mdelay(WIFI_TURNOFF_DELAY);
 		extern_wifi_set_enable(1);
 #ifdef CONFIG_HIBERNATION
 		printf("###mdelay(200)\n");
-		mdelay(200);
+		mdelay(WIFI_TURNON_DELAY);
 		printf("###sdio_reinit()\n");
 		sdio_reinit();
 #endif
@@ -97,7 +99,7 @@ dhd_wlan_set_power(int on, wifi_adapter_info_t *adapter)
 #endif
 #if defined(BCMPCIE) && defined(PCIE_ATU_FIXUP)
 		extern_wifi_set_enable(0);
-		mdelay(200);
+		mdelay(WIFI_TURNOFF_DELAY);
 		extern_wifi_set_enable(1);
 		mdelay(100);
 		amlogic_pcie_power_on_atu_fixup();
@@ -165,7 +167,7 @@ dhd_wlan_set_reset(int onoff)
 }
 
 static int
-dhd_wlan_set_carddetect(int present)
+dhd_wlan_set_carddetect(wifi_adapter_info_t *adapter, int present)
 {
 	int err = 0;
 
@@ -204,13 +206,32 @@ dhd_wlan_set_carddetect(int present)
 }
 
 static int
-dhd_wlan_get_mac_addr(unsigned char *buf, int ifidx)
+dhd_wlan_get_mac_addr(wifi_adapter_info_t *adapter,
+	unsigned char *buf, int ifidx)
 {
 	int err = -1;
 
-	if (ifidx == 1) {
+	if (ifidx == 0) {
+		/* Here is for wlan0 MAC address and please enable CONFIG_BCMDHD_CUSTOM_MAC in Makefile */
 #ifdef EXAMPLE_GET_MAC
 		struct ether_addr ea_example = {{0x00, 0x11, 0x22, 0x33, 0x44, 0xFF}};
+		bcopy((char *)&ea_example, buf, sizeof(struct ether_addr));
+#endif /* EXAMPLE_GET_MAC */
+#ifdef CUSTOMER_HW_AMLOGIC
+		bcopy((char *)wifi_get_mac(), buf, sizeof(struct ether_addr));
+		if (buf[0] == 0xff) {
+			printf("custom wifi mac is not set\n");
+			err = -1;
+		} else
+			printf("custom wifi mac-addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
+				buf[0], buf[1], buf[2],
+				buf[3], buf[4], buf[5]);
+#endif
+	}
+	else if (ifidx == 1) {
+		/* Here is for wlan1 MAC address and please enable CUSTOM_MULTI_MAC in Makefile */
+#ifdef EXAMPLE_GET_MAC
+		struct ether_addr ea_example = {{0x02, 0x11, 0x22, 0x33, 0x44, 0x55}};
 		bcopy((char *)&ea_example, buf, sizeof(struct ether_addr));
 #endif /* EXAMPLE_GET_MAC */
 #ifdef CUSTOMER_HW_AMLOGIC
@@ -227,37 +248,10 @@ dhd_wlan_get_mac_addr(unsigned char *buf, int ifidx)
 		err = -1;
 #endif
 #endif
-	} else {
-#ifdef EXAMPLE_GET_MAC
-		struct ether_addr ea_example = {{0x02, 0x11, 0x22, 0x33, 0x44, 0x55}};
-		bcopy((char *)&ea_example, buf, sizeof(struct ether_addr));
-#endif /* EXAMPLE_GET_MAC */
-#ifdef CUSTOMER_HW_AMLOGIC
-		bcopy((char *)wifi_get_mac(), buf, sizeof(struct ether_addr));
-		if (buf[0] == 0xff) {
-			printf("custom wifi mac is not set\n");
-			err = -1;
-		} else
-			printf("custom wifi mac-addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
-				buf[0], buf[1], buf[2],
-				buf[3], buf[4], buf[5]);
-#endif
 	}
-
-#ifdef EXAMPLE_GET_MAC_VER2
-	/* EXAMPLE code */
-	{
-		char macpad[56]= {
-		0x00,0xaa,0x9c,0x84,0xc7,0xbc,0x9b,0xf6,
-		0x02,0x33,0xa9,0x4d,0x5c,0xb4,0x0a,0x5d,
-		0xa8,0xef,0xb0,0xcf,0x8e,0xbf,0x24,0x8a,
-		0x87,0x0f,0x6f,0x0d,0xeb,0x83,0x6a,0x70,
-		0x4a,0xeb,0xf6,0xe6,0x3c,0xe7,0x5f,0xfc,
-		0x0e,0xa7,0xb3,0x0f,0x00,0xe4,0x4a,0xaf,
-		0x87,0x08,0x16,0x6d,0x3a,0xe3,0xc7,0x80};
-		bcopy(macpad, buf+6, sizeof(macpad));
+	else {
+		printf("%s: invalid ifidx=%d\n", __FUNCTION__, ifidx);
 	}
-#endif /* EXAMPLE_GET_MAC_VER2 */
 
 	printf("======== %s err=%d ========\n", __FUNCTION__, err);
 
@@ -377,7 +371,7 @@ dhd_wlan_init_gpio(wifi_adapter_info_t *adapter)
 #endif
 
 	if (gpio_wl_reg_on >= 0) {
-		err = gpio_request(gpio_wl_reg_on, "WL_REG_ON");
+		err = gpio_request(gpio_wl_reg_on, GPIO_WL_REG_ON_NAME);
 		if (err < 0) {
 			printf("%s: gpio_request(%d) for WL_REG_ON failed %d\n",
 				__FUNCTION__, gpio_wl_reg_on, err);
@@ -394,9 +388,9 @@ dhd_wlan_init_gpio(wifi_adapter_info_t *adapter)
 		}
 #ifdef CUSTOMER_HW_AMLOGIC
 		extern_wifi_set_enable(0);
-		mdelay(200);
+		mdelay(WIFI_TURNOFF_DELAY);
 		extern_wifi_set_enable(1);
-		mdelay(200);
+		mdelay(WIFI_TURNON_DELAY);
 #endif
 		amlogic_pcie_power_on_atu_fixup();
 #endif
@@ -406,7 +400,7 @@ dhd_wlan_init_gpio(wifi_adapter_info_t *adapter)
 #ifdef CUSTOMER_OOB
 	adapter->gpio_wl_host_wake = -1;
 	if (gpio_wl_host_wake >= 0) {
-		err = gpio_request(gpio_wl_host_wake, "bcmdhd");
+		err = gpio_request(gpio_wl_host_wake, GPIO_WL_HOST_WAKE_NAME);
 		if (err < 0) {
 			printf("%s: gpio_request(%d) for WL_HOST_WAKE failed %d\n",
 				__FUNCTION__, gpio_wl_host_wake, err);
@@ -491,14 +485,14 @@ static void
 dhd_wlan_init_adapter(wifi_adapter_info_t *adapter)
 {
 #ifdef ADAPTER_IDX
-	if (ADAPTER_IDX == 0) {
+	adapter->index = ADAPTER_IDX;
+	if (adapter->index == 0) {
 		adapter->bus_num = 1;
 		adapter->slot_num = 1;
-	} else if (ADAPTER_IDX == 1) {
+	} else if (adapter->index == 1) {
 		adapter->bus_num = 2;
 		adapter->slot_num = 1;
 	}
-	adapter->index = ADAPTER_IDX;
 #ifdef BCMSDIO
 	adapter->bus_type = SDIO_BUS;
 #elif defined(BCMPCIE)

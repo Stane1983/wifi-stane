@@ -3829,15 +3829,12 @@ dhd_get_chiprev(struct dhd_bus *bus)
  */
 int
 dhd_bus_download_firmware(struct dhd_bus *bus, osl_t *osh,
-                          char *pfw_path, char *pnv_path,
-                          char *pclm_path, char *pconf_path)
+                          char *pfw_path, char *pnv_path)
 {
 	int ret;
 
 	bus->fw_path = pfw_path;
 	bus->nv_path = pnv_path;
-	bus->dhd->clm_path = pclm_path;
-	bus->dhd->conf_path = pconf_path;
 
 #if defined(SUPPORT_MULTIPLE_REVISION)
 	if (concate_revision(bus, bus->fw_path, bus->nv_path) != 0) {
