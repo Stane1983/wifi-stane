@@ -452,6 +452,7 @@ enum odm_cmninfo {
 	ODM_CMNINFO_EN_AUTO_BW_TH,
 	ODM_CMNINFO_PEAK_DETECT_MODE,
 	ODM_CMNINFO_EN_NBI_DETECT,
+	ODM_CMNINFO_HW_SPECIAL_TYPE,
 	/*@-----------HOOK BEFORE REG INIT-----------*/
 
 	/*@Dynamic value:*/
@@ -919,6 +920,9 @@ struct dm_struct {
 	u8			bt_iso_tbl_idx;
 	u8			bt_cck_rssi_th;
 	#endif
+	#if (RTL8822C_SUPPORT)
+	u8			hw_special_type;
+	#endif
 	boolean			is_nbi_csi;
 	char			dbg_buf[PHYDM_SNPRINT_SIZE];
 	u8			rx_rate_plurality;
@@ -1107,6 +1111,7 @@ struct dm_struct {
 	s8			TH_L2H_default;
 	s8			th_edcca_hl_diff_default;
 	s8			th_l2h_ini;
+	s8			th_l2h_ini_custom;
 	s8			th_edcca_hl_diff;
 	boolean			carrier_sense_enable;
 	/*@-----------------------------------------------------------*/

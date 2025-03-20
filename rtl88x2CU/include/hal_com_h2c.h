@@ -385,7 +385,7 @@ s32 rtw_hal_set_FwMediaStatusRpt_range_cmd(_adapter *adapter, bool opmode, bool 
 /*data6*/
 #define SET_H2CCMD_UDP_KEEP_ALIVE_RETRY_LIMIT(__pH2CCmd, __Value) SET_BITS_TO_LE_1BYTE(__pH2CCmd+6, 0, 8, __Value);
 #endif /*CONFIG_WOW_KEEP_ALIVE_PATTERN*/
-#ifdef CONFIG_RTW_CUSTOMER_STR
+
 #define RTW_CUSTOMER_STR_LEN 16
 #define RTW_CUSTOMER_STR_FMT "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x"
 #define RTW_CUSTOMER_STR_ARG(x) ((u8 *)(x))[0], ((u8 *)(x))[1], ((u8 *)(x))[2], ((u8 *)(x))[3], ((u8 *)(x))[4], ((u8 *)(x))[5], \
@@ -395,6 +395,8 @@ s32 rtw_hal_set_FwMediaStatusRpt_range_cmd(_adapter *adapter, bool opmode, bool 
 /* H2C_CUSTOMER_STR_REQ  0x06 */
 #define H2C_CUSTOMER_STR_REQ_LEN 1
 #define SET_H2CCMD_CUSTOMER_STR_REQ_EN(__pH2CCmd, __Value)	SET_BITS_TO_LE_1BYTE(((u8 *)(__pH2CCmd)), 0, 1, (__Value))
+
+#ifdef CONFIG_RTW_CUSTOMER_STR
 s32 rtw_hal_h2c_customer_str_req(_adapter *adapter);
 s32 rtw_hal_customer_str_read(_adapter *adapter, u8 *cs);
 

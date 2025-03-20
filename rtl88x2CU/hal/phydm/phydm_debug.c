@@ -2197,13 +2197,16 @@ void phydm_avg_phy_val_nss(void *dm_void, u8 nss)
 		if (nss == 0 || nss == 1) {
 			*tmp_evm_avg = (u8)(*tmp_evm_sum / *tmp_cnt);
 			evm_rpt_show[0] = *tmp_evm_avg;
-		} else {
+		}
+#if (defined(PHYDM_COMPILE_ABOVE_2SS))
+		else {
 			for (i = 0; i < nss; i++) {
 				tmp_evm_avg[i] = (u8)(tmp_evm_sum[i] /
 						      *tmp_cnt);
 				evm_rpt_show[i] = tmp_evm_avg[i];
 			}
 		}
+#endif
 	}
 
 #if (defined(PHYDM_COMPILE_ABOVE_4SS))

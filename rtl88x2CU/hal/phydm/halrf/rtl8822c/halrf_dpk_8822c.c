@@ -38,7 +38,7 @@
 
 /*---------------------------Define Local Constant---------------------------*/
 
-/*8822C DPK ver:0x20 20200106*/
+/*8822C DPK ver:0x21 20240219*/
 
 static u32
 _btc_wait_indirect_reg_ready_8822c(
@@ -2068,6 +2068,13 @@ void dpk_track_8822c(
 
 	for (path = 0; path < DPK_RF_PATH_NUM_8822C; path++) {
 		delta_dpk[path] = dpk_info->thermal_dpk[path] - thermal_value[path];
+
+		if((dm->rfe_type == 8) || (dm->rfe_type == 9)) {
+			if (dpk_info->dpk_band == 0) /*2G*/
+				delta_dpk[path] = delta_dpk[path] - 17;
+			else
+				delta_dpk[path] = delta_dpk[path] - 14;
+		}
 
 		offset[path] = (delta_dpk[path] - dpk_info->thermal_dpk_delta[path]) & 0x7f;
 

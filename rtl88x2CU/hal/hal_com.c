@@ -1479,6 +1479,9 @@ int c2h_mac_hidden_rpt_hdl(_adapter *adapter, u8 *data, u8 len)
 	}
 #endif
 
+#ifdef CONFIG_RTL8822C
+	hal_data->hw_stype = hw_stype;
+#endif
 	hal_data->PackageType = package_type;
 	hal_spec->hci_type = hci_type;
 	hal_spec->wl_func &= mac_hidden_wl_func_to_hal_wl_func(wl_func);
@@ -4506,7 +4509,7 @@ s32 rtw_hal_set_default_port_id_cmd(_adapter *adapter, u8 mac_id)
 	SET_H2CCMD_DFTPID_MAC_ID(parm, mac_id);
 
 	RTW_DBG_DUMP("DFT port id parm:", parm, H2C_DEFAULT_PORT_ID_LEN);
-	RTW_INFO("%s ("ADPT_FMT") port_id :%d, mad_id:%d\n",
+	RTW_INFO("%s ("ADPT_FMT") port_id :%d, mac_id:%d\n",
 		__func__, ADPT_ARG(adapter), port_id, mac_id);
 
 	ret = rtw_hal_fill_h2c_cmd(adapter, H2C_DEFAULT_PORT_ID, H2C_DEFAULT_PORT_ID_LEN, parm);
@@ -4547,6 +4550,113 @@ s32 rtw_set_ps_rsvd_page(_adapter *adapter)
 	return ret;
 }
 
+#define MLME_IS_DFT_PORT_CANDIDATE(adapter) (MLME_IS_STA(adapter) && MLME_IS_ASOC(adapter))
+/**
+ * rtw_select_and_set_dftport() - select and set default port while connected/disconnected
+ * @padapter: the adapter which going to connect with or disconnect from AP
+ * @is_connected: the caller is going to connect with or disconnect from AP
+ *
+ * When a STA adapter connect with or disconnect from AP,
+ * this function should be used to select and set default port to FW
+ * Then, BTC or other module will set its own function default port id with selected default port.
+ * Information of default port will be stored in dvobj
+ * rtw_set_ps_mode() and rtw_hal_wow_enable() will set default port when needed
+ *
+ * Return: adapter - this adapter will use fw default port function,
+ *                   it may be not the same as the input adapter.
+ */
+struct _ADAPTER* rtw_select_and_set_dftport(struct _ADAPTER *padapter, bool is_connected)
+{
+	struct mlme_priv *pmlmepriv = &padapter->mlmepriv;
+	struct dvobj_priv *dvobj = adapter_to_dvobj(padapter);
+	struct _ADAPTER *padapter_dftport = GET_PRIMARY_ADAPTER(padapter);
+	struct mlme_priv *pmlmepriv_dftport = &padapter_dftport->mlmepriv;
+	u8 i, reset_to_dft = 0;
+
+	/*
+	 * primary_adapter will be designated as padapter_dftport
+	 * If padapter_dftport is (STA & connected), set dft_port(padapter_dftport)
+	 * Else if padapter is (STA & connected), set dft_port(padapter)
+	 * Else, padapter_dftport and padapter are not (STA & connected), then loop all iface
+	 * and select the first padapter[i] is (STA & connected), set dft_port(padapter[i])
+	 */
+
+#if 0
+	RTW_INFO(FUNC_NDEV_FMT " padapter_dftport(%u)\n",
+		 FUNC_NDEV_ARG(padapter_dftport->pnetdev), MLME_IS_DFT_PORT_CANDIDATE(padapter_dftport));
+	RTW_INFO(FUNC_NDEV_FMT " padapter(%u)\n",
+		 FUNC_NDEV_ARG(padapter->pnetdev), MLME_IS_DFT_PORT_CANDIDATE(padapter));
+#endif
+
+	/* If primary adapter is on connect/disconnect flow */
+	if (padapter == padapter_dftport) {
+		if (is_connected) {
+			if (MLME_IS_DFT_PORT_CANDIDATE(padapter)) {
+				goto exit;
+			} else {
+				RTW_WARN(FUNC_NDEV_FMT " : unexpected condition, netdev should be(STA & connected)\n",
+					 FUNC_NDEV_ARG(padapter->pnetdev));
+				goto loop_all_iface;
+			}
+		} else { /* disconnect flow */
+			goto loop_all_iface;
+		}
+	} else { /* non-primary adapter is on connect/disconnect flow */
+		if (is_connected) {
+			if (MLME_IS_DFT_PORT_CANDIDATE(padapter_dftport)) {
+				goto exit;
+			} else {
+				if (MLME_IS_DFT_PORT_CANDIDATE(padapter)) {
+					padapter_dftport = padapter;
+					goto exit;
+				} else {
+					RTW_WARN(FUNC_NDEV_FMT " : unexpected condition, netdev should be(STA & connected)\n",
+						 FUNC_NDEV_ARG(padapter->pnetdev));
+					goto loop_all_iface;
+				}
+			}
+		} else { /* disconnect flow */
+			goto loop_all_iface;
+		}
+	}
+
+loop_all_iface:
+	/*
+	 * padapter_dftport and padapter are not (STA & connected)
+	 * Loop all iface, select the first padapter[i] is (STA & connected), set dft_port(padapter[i])
+	 * This loop will only happen on disconnect flow
+	 * */
+	if (DEV_STA_LD_NUM(dvobj) > 0) {
+		for (i = 0; i < dvobj->iface_nums; i++) {
+			padapter_dftport = dvobj->padapters[i];
+			if (padapter_dftport == padapter)
+				continue;
+
+			if (MLME_IS_DFT_PORT_CANDIDATE(padapter_dftport))
+				goto exit;
+		}
+	}
+	/* No padapter[i] is (STA & connected) */
+	reset_to_dft = 1;
+exit:
+	if (reset_to_dft) {
+		/* No linked STA adapter be founded, reset dft_port to PRIMARY_ADAPTER and macid 0 */
+		RTW_INFO("%s() No linked STA be found, reset default_port_id to default\n", __func__);
+		padapter_dftport = GET_PRIMARY_ADAPTER(padapter);
+		/* Use low level function rtw_hal_set_default_port_id_cmd(_adapter *adapter, u8 mac_id) */
+		if (rtw_hal_set_default_port_id_cmd(padapter_dftport, 0) != _SUCCESS)
+			RTW_ERR("%s() rtw_hal_set_default_port_id_cmd fail\n", __func__);
+	} else {
+		if (rtw_set_default_port_id(padapter_dftport) != _SUCCESS)
+			RTW_ERR("%s() rtw_set_default_port_id fail\n", __func__);
+	}
+#if 0
+	RTW_INFO(FUNC_NDEV_FMT " is padapter_dftport(%u) for function return\n",
+		 FUNC_NDEV_ARG(padapter_dftport->pnetdev), MLME_IS_DFT_PORT_CANDIDATE(padapter_dftport));
+#endif
+
+	return padapter_dftport;
+}
 #if 0
 _adapter * _rtw_search_dp_iface(_adapter *adapter)
 {
@@ -15685,7 +15795,6 @@ void rtw_dump_cur_efuse(PADAPTER padapter)
 	}
 
 #ifdef CONFIG_RTW_DEBUG
-#if (RTW_LOG_LEVEL > 3)
 	if (hal_data->efuse_file_status == EFUSE_FILE_LOADED)
 		RTW_MAP_DUMP_SEL(RTW_DBGDUMP, "EFUSE FILE", hal_data->efuse_eeprom_data, mapsize);
 	else {
@@ -15696,7 +15805,6 @@ void rtw_dump_cur_efuse(PADAPTER padapter)
 #endif
 			RTW_MAP_DUMP_SEL(RTW_DBGDUMP, "HW EFUSE", hal_data->efuse_eeprom_data, mapsize);
 	}
-#endif
 #endif
 }
 
@@ -17853,5 +17961,27 @@ the expected initial values:
 		#endif
 	}
 #endif
+}
+#endif
+
+#ifdef DBG_FW_POLL
+s32 rtw_hal_h2c_test(_adapter *adapter)
+{
+	HAL_DATA_TYPE *hal = GET_HAL_DATA(adapter);
+	s32 ret;
+
+	if (hal->bFWReady != _TRUE)
+		ret = RTW_FW_NOT_READY;
+	else {
+		/* use H2C_CUSTOMER_STR_REQ with En=0 to test the result of rtw_hal_fill_h2c_cmd */
+		u8 h2c_data[H2C_CUSTOMER_STR_REQ_LEN] = {0};
+
+		SET_H2CCMD_CUSTOMER_STR_REQ_EN(h2c_data, 0);
+		ret = rtw_hal_fill_h2c_cmd(adapter, H2C_CUSTOMER_STR_REQ, H2C_CUSTOMER_STR_REQ_LEN, h2c_data);
+	}
+
+	hal->h2c_test_ret = ret;
+
+	return ret;
 }
 #endif

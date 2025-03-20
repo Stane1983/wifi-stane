@@ -452,6 +452,11 @@ void Init_ODM_ComInfo(_adapter *adapter)
 	odm_cmn_info_init(pDM_Odm, ODM_CMNINFO_EFUSE0X3D7, pHalData->efuse0x3d7);
 	odm_cmn_info_init(pDM_Odm, ODM_CMNINFO_EFUSE0X3D8, pHalData->efuse0x3d8);
 
+#ifdef CONFIG_RTL8822C
+	/* HW special type*/
+	odm_cmn_info_init(pDM_Odm, ODM_CMNINFO_HW_SPECIAL_TYPE, pHalData->hw_stype);
+#endif
+
 	/* waiting for PhyDMV034 support*/
 	odm_cmn_info_hook(pDM_Odm, ODM_CMNINFO_MANUAL_SUPPORTABILITY, &(adapter->registrypriv.phydm_ability)); 
 

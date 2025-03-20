@@ -17,10 +17,6 @@
 #include <drv_types.h>
 #include <hal_data.h>
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 41) && defined (CONFIG_AMLOGIC_KERNEL_VERSION))
-#include <linux/upstream_version.h>
-#endif
-
 #ifdef CONFIG_IOCTL_CFG80211
 
 #ifndef DBG_RTW_CFG80211_STA_PARAM
@@ -189,21 +185,6 @@ bool rtw_cfg80211_allow_ch_switch_notify(_adapter *adapter)
 	return 1;
 }
 
-static inline void rtw_cfg80211_ch_switch_started_notify(struct net_device *dev,
-	struct cfg80211_chan_def *chandef, unsigned int link_id, u8 count, bool quiet)
-{
-#if ( (defined (CONFIG_AMLOGIC_KERNEL_VERSION) && defined (AML_KERNEL_VERSION)) && (\
-		(CONFIG_AMLOGIC_KERNEL_VERSION == 13515 && AML_KERNEL_VERSION >= 15)\
-	 || (CONFIG_AMLOGIC_KERNEL_VERSION == 14515 && AML_KERNEL_VERSION >= 12) ) )\
-	 || (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 9, 0))
-	 return cfg80211_ch_switch_started_notify(dev, chandef, link_id, count, quiet, 0);
-#elif defined (CFG80211_SINGLE_NETDEV_MULTI_LINK_SUPPORT)
-	 return cfg80211_ch_switch_started_notify(dev, chandef, link_id, count, quiet);
-#else
-	 return cfg80211_ch_switch_started_notify(dev, chandef, count);
-#endif
-}
-
 u8 rtw_cfg80211_ch_switch_notify(_adapter *adapter, u8 ch, u8 bw, u8 offset,
 	u8 ht, bool started)
 {
@@ -223,8 +204,27 @@ u8 rtw_cfg80211_ch_switch_notify(_adapter *adapter, u8 ch, u8 bw, u8 offset,
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0))
 	if (started) {
-#if defined(CONFIG_MLD_KERNEL_PATCH)
-		rtw_cfg80211_ch_switch_started_notify(adapter->pnetdev, &chdef, 0, 0, false);
+#if defined(CONFIG_AMLOGIC_KERNEL_VERSION)
+		_cfg80211_ch_switch_started_notify(adapter->pnetdev, &chdef, 0, 0, false);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0))
+		cfg80211_ch_switch_started_notify(adapter->pnetdev, &chdef, 0, 0, false);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)) || defined(CONFIG_MLD_KERNEL_PATCH)
+		cfg80211_ch_switch_started_notify(adapter->pnetdev, &chdef, 0, 0, false, punct_bitmap);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+		cfg80211_ch_switch_started_notify(adapter->pnetdev, &chdef, 0, 0, false);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
+
+		/* --- cfg80211_ch_switch_started_notfiy() ---
+		 *  A new parameter, bool quiet, is added from Linux kernel v5.11,
+		 *  to see if block-tx was requested by the AP. since currently,
+		 *  the API is used for station before connected in rtw_chk_start_clnt_join()
+		 *  the quiet is set to false here first. May need to refine it if
+		 *  called by others with block-tx.
+		 */
+
+		cfg80211_ch_switch_started_notify(adapter->pnetdev, &chdef, 0, false);
+#else
+		cfg80211_ch_switch_started_notify(adapter->pnetdev, &chdef, 0);
 #endif
 		goto exit;
 	}
@@ -233,12 +233,14 @@ u8 rtw_cfg80211_ch_switch_notify(_adapter *adapter, u8 ch, u8 bw, u8 offset,
 	if (!rtw_cfg80211_allow_ch_switch_notify(adapter))
 		goto exit;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
-#if ((defined (AML_KERNEL_VERSION) && AML_KERNEL_VERSION >= 15) || LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 153))
-	cfg80211_ch_switch_notify(adapter->pnetdev, &chdef, 0, 0);
-#else
+#if defined(CONFIG_AMLOGIC_KERNEL_VERSION)
+	_cfg80211_ch_switch_notify(adapter->pnetdev, &chdef, 0);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0))
 	cfg80211_ch_switch_notify(adapter->pnetdev, &chdef, 0);
-#endif
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)) || defined(CONFIG_MLD_KERNEL_PATCH)
+	cfg80211_ch_switch_notify(adapter->pnetdev, &chdef, 0, punct_bitmap);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2))
+	cfg80211_ch_switch_notify(adapter->pnetdev, &chdef, 0);
 #else
 	cfg80211_ch_switch_notify(adapter->pnetdev, &chdef);
 #endif
@@ -795,7 +797,7 @@ void rtw_cfg80211_ibss_indicate_connect(_adapter *padapter)
 					RTW_INFO(FUNC_ADPT_FMT" inform success !!\n", FUNC_ADPT_ARG(padapter));
 			} else {
 				RTW_INFO("cur_network is not exist!!!\n");
-				return;
+				return ;
 			}
 		} else {
 			if (scanned == NULL) {
@@ -921,7 +923,7 @@ check_bss:
 		#endif
 
 		#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-		#if defined(CONFIG_MLD_KERNEL_PATCH)
+		#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0) || defined(CONFIG_MLD_KERNEL_PATCH)
 		roam_info.links[0].bssid = cur_network->network.MacAddress;
 		#else	
 		roam_info.bssid = cur_network->network.MacAddress;
@@ -1721,7 +1723,7 @@ exit:
 }
 
 static int cfg80211_rtw_add_key(struct wiphy *wiphy, struct net_device *ndev
-#ifdef CONFIG_MLD_KERNEL_PATCH
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)) || defined(CONFIG_MLD_KERNEL_PATCH)
 	, int link_id
 #endif
 	, u8 key_index
@@ -1889,7 +1891,7 @@ addkey_end:
 }
 
 static int cfg80211_rtw_get_key(struct wiphy *wiphy, struct net_device *ndev
-#ifdef CONFIG_MLD_KERNEL_PATCH
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)) || defined(CONFIG_MLD_KERNEL_PATCH)
 	, int link_id
 #endif
 	, u8 keyid
@@ -2084,7 +2086,7 @@ exit:
 }
 
 static int cfg80211_rtw_del_key(struct wiphy *wiphy, struct net_device *ndev
-#ifdef CONFIG_MLD_KERNEL_PATCH
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)) || defined(CONFIG_MLD_KERNEL_PATCH)
 	, int link_id
 #endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)) || defined(COMPAT_KERNEL_RELEASE)
@@ -2110,7 +2112,7 @@ static int cfg80211_rtw_del_key(struct wiphy *wiphy, struct net_device *ndev
 }
 
 static int cfg80211_rtw_set_default_key(struct wiphy *wiphy, struct net_device *ndev
-#ifdef CONFIG_MLD_KERNEL_PATCH
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)) || defined(CONFIG_MLD_KERNEL_PATCH)
 	, int link_id
 #endif
 	, u8 key_index
@@ -2165,7 +2167,7 @@ static int cfg80211_rtw_set_default_key(struct wiphy *wiphy, struct net_device *
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30))
 int cfg80211_rtw_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *ndev
-#ifdef CONFIG_MLD_KERNEL_PATCH
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)) || defined(CONFIG_MLD_KERNEL_PATCH)
 	, int link_id
 #endif
 	, u8 key_index)
@@ -5203,13 +5205,6 @@ static int rtw_add_beacon(_adapter *adapter, const u8 *head, size_t head_len, co
 		goto exit;
 	}
 
-
-	/* _rtw_memcpy(&pstapriv->max_num_sta, param->u.bcn_ie.reserved, 2); */
-
-	/* if((pstapriv->max_num_sta>NUM_STA) || (pstapriv->max_num_sta<=0)) */
-	/*	pstapriv->max_num_sta = NUM_STA; */
-
-
 	_rtw_memcpy(pbuf, (void *)head + 24, head_len - 24); /* 24=beacon header len. */
 	_rtw_memcpy(pbuf + head_len - 24, (void *)tail, tail_len);
 
@@ -5507,8 +5502,16 @@ static int rtw_cfg80211_set_beacon_ies(struct net_device *net, const u8 *head,
 }
 
 static int cfg80211_rtw_change_beacon(struct wiphy *wiphy, struct net_device *ndev,
-		struct cfg80211_beacon_data *info)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0))
+		struct cfg80211_ap_update *info_new
+#else
+		struct cfg80211_beacon_data *info
+#endif
+)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0))
+	struct cfg80211_beacon_data *info = &info_new->beacon;
+#endif
 	int ret = 0;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(ndev);
 
@@ -7086,7 +7089,7 @@ void rtw_cfg80211_external_auth_request(_adapter *padapter, union recv_frame *rf
 	/* rframe, in this case is null point */
 
 #if (KERNEL_VERSION(4, 17, 0) <= LINUX_VERSION_CODE) \
-	|| defined(CONFIG_KERNEL_PATCH_EXTERNAL_AUTH)
+    || defined(CONFIG_KERNEL_PATCH_EXTERNAL_AUTH)
 	struct cfg80211_external_auth_params params = {0};
 	struct net_device *netdev = wdev_to_ndev(wdev);
 
@@ -8276,6 +8279,7 @@ static int cfg80211_rtw_mgmt_tx(struct wiphy *wiphy,
 	struct dvobj_priv *dvobj;
 	struct rtw_wdev_priv *pwdev_priv;
 	struct rf_ctl_t *rfctl;
+	struct mlme_priv *pmlmepriv;
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0))
 	#if defined(RTW_DEDICATED_P2P_DEVICE)
@@ -8316,6 +8320,7 @@ static int cfg80211_rtw_mgmt_tx(struct wiphy *wiphy,
 		#endif
 	}
 
+	pmlmepriv = &(padapter->mlmepriv);
 	dvobj = adapter_to_dvobj(padapter);
 	pwdev_priv = adapter_wdev_data(padapter);
 
@@ -8482,6 +8487,12 @@ dump:
 		}
 	}
 #endif /* CONFIG_P2P */
+
+	/* Driver will stuck at CONNECT_FG if STA TX auth frame fail, so trigger join timeout handler */
+	if (tx_ret != _SUCCESS && frame_styp == RTW_IEEE80211_STYPE_AUTH && MLME_IS_STA(padapter)) {
+		RTW_INFO("TX auth fail, trigger join timeout handler\n");
+		_set_timer(&pmlmepriv->assoc_timer, 1000);
+	}
 
 cancel_ps_deny:
 	rtw_ps_deny_cancel(padapter, PS_DENY_MGNT_TX);

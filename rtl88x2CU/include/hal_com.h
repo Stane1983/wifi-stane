@@ -692,6 +692,7 @@ void rtw_dump_fifo(void *sel, _adapter *adapter, u8 fifo_sel, u32 fifo_addr, u32
 s32 rtw_hal_set_default_port_id_cmd(_adapter *adapter, u8 mac_id);
 s32 rtw_set_default_port_id(_adapter *adapter);
 s32 rtw_set_ps_rsvd_page(_adapter *adapter);
+struct _ADAPTER* rtw_select_and_set_dftport(struct _ADAPTER *adapter, bool is_connected);
 
 #define get_dft_portid(adapter) (adapter_to_dvobj(adapter)->dft.port_id)
 #define get_dft_macid(adapter) (adapter_to_dvobj(adapter)->dft.mac_id)
@@ -774,6 +775,10 @@ static inline void rtw_leave_protsel_macsleep(_adapter *padapter) {}
 
 #ifndef RTW_HALMAC
 void rtw_hal_init_sifs_backup(_adapter *adapter);
+#endif
+
+#ifdef DBG_FW_POLL
+s32 rtw_hal_h2c_test(_adapter *adapter);
 #endif
 
 #endif /* __HAL_COMMON_H__ */

@@ -34,6 +34,8 @@
 #define RTW_NOT_SUPPORT		15
 #define RTW_BUSY		16
 #define RTW_ABORT_LINKING	17
+#define RTW_HAL_NOT_READY	18
+#define RTW_FW_NOT_READY	19
 
 /* #define RTW_STATUS_TIMEDOUT -110 */
 

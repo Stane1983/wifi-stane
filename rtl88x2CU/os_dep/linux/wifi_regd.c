@@ -15,10 +15,6 @@
 
 #include <drv_types.h>
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 41) && defined (CONFIG_AMLOGIC_KERNEL_VERSION))
-#include <linux/upstream_version.h>
-#endif
-
 #ifdef CONFIG_IOCTL_CFG80211
 #if !RTW_PER_ADAPTER_WIPHY
 void rtw_chset_hook_os_channels(struct rtw_chset *chset, void *os_ref)
@@ -145,9 +141,9 @@ exit:
 static void rtw_regd_schedule_dfs_chan_update(struct wiphy *wiphy)
 {
 	struct rtw_wiphy_data *wiphy_data = rtw_wiphy_priv(wiphy);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2)) || defined(CONFIG_MLD_KERNEL_PATCH)
     unsigned int link_id = 0; /*TBD*/
-    #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0))
+    #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)) || defined(CONFIG_MLD_KERNEL_PATCH)
     u16 punct_bitmap = 0; /*TBD*/
     #endif
 #endif
@@ -158,13 +154,13 @@ static void rtw_regd_schedule_dfs_chan_update(struct wiphy *wiphy)
 			return;
 		rtw_regd_set_du_chdef(wiphy);
 	}
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
-#if ((defined (AML_KERNEL_VERSION) && AML_KERNEL_VERSION >= 15) || LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 153))
-	cfg80211_ch_switch_notify(wiphy_data->du_wdev->netdev, &wiphy_data->du_chdef, 0, 0);
-#else
-	cfg80211_ch_switch_notify(wiphy_data->du_wdev->netdev, &wiphy_data->du_chdef, 0);
-#endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0))
+	cfg80211_ch_switch_notify(wiphy_data->du_wdev->netdev, &wiphy_data->du_chdef, link_id);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)) || defined(CONFIG_MLD_KERNEL_PATCH)
+	cfg80211_ch_switch_notify(wiphy_data->du_wdev->netdev, &wiphy_data->du_chdef,
+			          link_id, punct_bitmap);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2))
+	cfg80211_ch_switch_notify(wiphy_data->du_wdev->netdev, &wiphy_data->du_chdef, link_id);
 #else
 	cfg80211_ch_switch_notify(wiphy_data->du_wdev->netdev, &wiphy_data->du_chdef);
 #endif
@@ -1066,6 +1062,7 @@ static void rtw_cfg80211_cac_event(struct rf_ctl_t *rfctl, u8 band_idx
 		if (!iface->rtw_wdev)
 			continue;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2)) || defined(CONFIG_MLD_KERNEL_PATCH)
+		/*TBD - should consdier the case of AP MLD*/
 		async = !((iface->rtw_wdev)->links[0].ap.chandef.chan);
 #else
 		async = !iface->rtw_wdev->chandef.chan;

@@ -1764,7 +1764,7 @@ void Supported_rate_infra_ap(_adapter *padapter, PNDIS_802_11_VARIABLE_IEs pIE)
 		return;
 
 	for (i = 0 ; i < pIE->Length; i++)
-		pmlmeinfo->SupportedRates_infra_ap[i] = (pIE->data[i]);
+		pmlmeinfo->SupportedRates_infra_ap[i] = *(pIE->data + i);
 
 }
 
@@ -1783,7 +1783,7 @@ void Extended_Supported_rate_infra_ap(_adapter *padapter, PNDIS_802_11_VARIABLE_
 				break;
 		}
 		for (j = 0; j < pIE->Length; j++)
-			pmlmeinfo->SupportedRates_infra_ap[i+j] = (pIE->data[j]);
+			pmlmeinfo->SupportedRates_infra_ap[i+j] = *(pIE->data + j);
 	}
 
 }
@@ -1820,7 +1820,7 @@ void HT_caps_handler_infra_ap(_adapter *padapter, PNDIS_802_11_VARIABLE_IEs pIE)
 
 	/*copy MCS_SET*/
 	for (i = 3; i < 19; i++)
-		phtpriv->MCS_set_infra_ap[i-3] = (pIE->data[i]);
+		phtpriv->MCS_set_infra_ap[i-3] = *(pIE->data + i);
 
 	/*get number of stream from mcs set*/
 	HT_get_ss_from_mcs_set(phtpriv->MCS_set_infra_ap, &phtpriv->Rx_ss_infra_ap);
@@ -1864,31 +1864,22 @@ void HT_caps_handler(_adapter *padapter, PNDIS_802_11_VARIABLE_IEs pIE)
 	if (phtpriv->ht_option == _FALSE)
 		return;
 
+	if (pIE->Length > HT_CAPS_IE_LEN)
+		return;
+
 	pmlmeinfo->HT_caps_enable = 1;
 
-	for (i = 0; i < (pIE->Length); i++) {
-		if (i != 2) {
-			/*	Commented by Albert 2010/07/12 */
-			/*	Got the endian issue here. */
-			pmlmeinfo->HT_caps.u.HT_cap[i] &= (pIE->data[i]);
-		} else {
-			/* AMPDU Parameters field */
+	for (i = 0; i < (pIE->Length); i++)
+			pmlmeinfo->HT_caps.u.HT_cap[i] &= *(pIE->data + i);
 
-			/* Get MIN of MAX AMPDU Length Exp */
-			if ((pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x3) > (pIE->data[i] & 0x3))
-				max_AMPDU_len = (pIE->data[i] & 0x3);
-			else
-				max_AMPDU_len = (pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x3);
+	/* Get MIN of MAX AMPDU Length Exp */
+	max_AMPDU_len = GET_HT_CAP_ELE_MAX_AMPDU_LEN_EXP(pIE->data);
+	max_AMPDU_len = rtw_min((pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x3), max_AMPDU_len);
 
-			/* Get MAX of MIN MPDU Start Spacing */
-			if ((pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x1c) > (pIE->data[i] & 0x1c))
-				min_MPDU_spacing = (pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x1c);
-			else
-				min_MPDU_spacing = (pIE->data[i] & 0x1c);
-
-			pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para = max_AMPDU_len | min_MPDU_spacing;
-		}
-	}
+	/* Get MAX of MIN MPDU Start Spacing */
+	min_MPDU_spacing = GET_HT_CAP_ELE_MIN_MPDU_S_SPACE(pIE->data);
+	min_MPDU_spacing = rtw_max((pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x1c), (min_MPDU_spacing << 2));
+	pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para = max_AMPDU_len | min_MPDU_spacing;
 
 	/*	Commented by Albert 2010/07/12 */
 	/*	Have to handle the endian issue after copying. */
@@ -4873,9 +4864,9 @@ void rtw_set_google_cast_mdns_wow_pattern(_adapter *padapter)
 
 		/* reset pattern */
 		_rtw_memset(pwrpriv->patterns[index].content, 0,
-			sizeof(pwrpriv->patterns[index].content));
+			    sizeof(pwrpriv->patterns[index].content));
 		_rtw_memset(pwrpriv->patterns[index].mask, 0,
-			sizeof(pwrpriv->patterns[index].mask));
+			    sizeof(pwrpriv->patterns[index].mask));
 		pwrpriv->patterns[index].len = 0;
 
 		ptr = pwrpriv->patterns[index].content;
@@ -4967,7 +4958,7 @@ u8 rtw_set_default_pattern(_adapter *adapter)
 		return 0;
 #endif
 
-	for (index = 0 ; index < DEFAULT_PATTERN_NUM; index++) {
+	for (index = 0; index < DEFAULT_PATTERN_NUM; index++) {
 		_rtw_memset(pwrpriv->patterns[index].content, 0,
 			    sizeof(pwrpriv->patterns[index].content));
 		_rtw_memset(pwrpriv->patterns[index].mask, 0,

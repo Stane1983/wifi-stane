@@ -463,4 +463,44 @@ u8 rtw_cfg80211_ch_switch_notify(_adapter *adapter, u8 ch, u8 bw, u8 offset, u8 
 #include "wifi_regd.h"
 #include "rtw_cfgvendor.h"
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 41) && defined (CONFIG_AMLOGIC_KERNEL_VERSION))
+#include <linux/upstream_version.h>
+#endif
+
+static inline void _cfg80211_ch_switch_notify(struct net_device *dev,
+	struct cfg80211_chan_def *chandef, unsigned int link_id)
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0))
+	return cfg80211_ch_switch_notify(dev, chandef, link_id);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)) \
+	|| ( (defined (CONFIG_AMLOGIC_KERNEL_VERSION) && defined (AML_KERNEL_VERSION)) \
+	     && ( (CONFIG_AMLOGIC_KERNEL_VERSION == 13515 && AML_KERNEL_VERSION >= 15)\
+	       || (CONFIG_AMLOGIC_KERNEL_VERSION == 14515 && AML_KERNEL_VERSION >= 12) ) )
+	return cfg80211_ch_switch_notify(dev, chandef, link_id, 0);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2))
+	return cfg80211_ch_switch_notify(dev, chandef, link_id);
+#else
+	return cfg80211_ch_switch_notify(dev, chandef);
+#endif
+}
+
+static inline void _cfg80211_ch_switch_started_notify(struct net_device *dev,
+	struct cfg80211_chan_def *chandef, unsigned int link_id, u8 count, bool quiet)
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0))
+	return cfg80211_ch_switch_started_notify(dev, chandef, link_id, count, quiet);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)) \
+	|| ( (defined (CONFIG_AMLOGIC_KERNEL_VERSION) && defined (AML_KERNEL_VERSION)) \
+	     && ( (CONFIG_AMLOGIC_KERNEL_VERSION == 13515 && AML_KERNEL_VERSION >= 15)\
+	       || (CONFIG_AMLOGIC_KERNEL_VERSION == 14515 && AML_KERNEL_VERSION >= 12) ) )
+	return cfg80211_ch_switch_started_notify(dev, chandef, link_id, count, quiet, 0);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+	return cfg80211_ch_switch_started_notify(dev, chandef, link_id, count, quiet);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
+	return cfg80211_ch_switch_started_notify(dev, chandef, count, quiet);
+#else
+	return cfg80211_ch_switch_started_notify(dev, chandef, count);
+#endif
+}
+
 #endif /* __IOCTL_CFG80211_H__ */

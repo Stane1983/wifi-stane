@@ -755,6 +755,27 @@ static int proc_get_fw_info(struct seq_file *m, void *v)
 	rtw_dump_fw_info(m, adapter);
 	return 0;
 }
+
+#ifdef DBG_FW_POLL
+static int proc_get_fw_poll(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+	HAL_DATA_TYPE *hal = GET_HAL_DATA(adapter);
+	s32 ret;
+
+	if (rtw_get_hw_init_completed(adapter)) {
+		rtw_run_in_thread_cmd_wait(adapter, ((void *)(rtw_hal_h2c_test)), adapter, 2000);
+		ret = hal->h2c_test_ret;
+	} else
+		ret = RTW_HAL_NOT_READY;
+
+	RTW_PRINT_SEL(m, "%d\n", ret);
+
+	return 0;
+}
+#endif
+
 static int proc_get_mac_reg_dump(struct seq_file *m, void *v)
 {
 	struct net_device *dev = m->private;
@@ -5755,6 +5776,10 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("fifo_dump", proc_dump_fifo, proc_set_fifo_info),
 #endif
 	RTW_PROC_HDL_SSEQ("fw_info", proc_get_fw_info, NULL),
+
+#ifdef DBG_FW_POLL
+	RTW_PROC_HDL_SSEQ("fw_poll", proc_get_fw_poll, NULL),
+#endif
 
 #ifdef DBG_XMIT_BLOCK
 	RTW_PROC_HDL_SSEQ("xmit_block", proc_get_xmit_block, proc_set_xmit_block),

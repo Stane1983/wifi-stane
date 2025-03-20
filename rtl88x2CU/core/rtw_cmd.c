@@ -3991,6 +3991,24 @@ static s32 rtw_mp_cmd_hdl(_adapter *padapter, u8 mp_cmd_id)
 
 	if (mp_cmd_id == MP_START) {
 		if (padapter->registrypriv.mp_mode == 0) {
+#if defined(CONFIG_RTL8822C) && defined(CONFIG_SDIO_HCI)
+			if (pHalData->hw_stype == 0xc) {
+				u16 xtal_sel = 0xffff;
+				u8 status = _SUCCESS;
+
+				phy_set_mac_reg(padapter, 0x1020, BIT26|BIT25|BIT24|BIT23, 0x0);
+				padapter->registrypriv.boffefusemask = 1;
+				status = rtw_efuse_map_read(padapter, 0x108 , 2 , (u8*)&xtal_sel);
+				RTW_INFO(FUNC_ADPT_FMT"Read PG xtalsel: 0x%x \n", FUNC_ADPT_ARG(padapter), xtal_sel);
+
+				if (xtal_sel != 0xF0CD && status == _SUCCESS) {
+					xtal_sel = 0xf0cd;
+					RTW_INFO(FUNC_ADPT_FMT"To PG xtalsel\n", FUNC_ADPT_ARG(padapter));
+					rtw_efuse_map_write(padapter, 0x108, 2, (u8*)&xtal_sel);
+				}
+				padapter->registrypriv.boffefusemask = 0;
+			}
+#endif
 			rtw_intf_stop(padapter);
 			rtw_hal_deinit(padapter);
 			padapter->registrypriv.mp_mode = 1;

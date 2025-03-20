@@ -8,10 +8,6 @@ EXTRA_CFLAGS += -O1
 #EXTRA_CFLAGS += -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes
 
 EXTRA_CFLAGS += -Wno-unused-variable
-EXTRA_CFLAGS += -Wno-declaration-after-statement
-EXTRA_CFLAGS += -Wno-unknown-directives
-EXTRA_CFLAGS += -Wno-unknown-warning-option
-EXTRA_CFLAGS += -Wno-incompatible-pointer-types
 #EXTRA_CFLAGS += -Wno-unused-value
 #EXTRA_CFLAGS += -Wno-unused-label
 #EXTRA_CFLAGS += -Wno-unused-parameter
@@ -33,7 +29,6 @@ EXTRA_CFLAGS += -Wno-misleading-indentation
 EXTRA_CFLAGS += -Wno-parentheses-equality
 EXTRA_CFLAGS += -Wno-self-assign
 EXTRA_CFLAGS += -Wno-header-guard
-EXTRA_CFLAGS += -Wno-misleading-indentation
 endif
 
 GCC_VER_49 := $(shell echo `$(CC) -dumpversion | cut -f1-2 -d.` \>= 4.9 | bc )
@@ -77,7 +72,7 @@ CONFIG_GSPI_HCI = n
 CONFIG_AP_MODE = y
 CONFIG_P2P = y
 CONFIG_MP_INCLUDED = y
-CONFIG_POWER_SAVING = n
+CONFIG_POWER_SAVING = y
 CONFIG_IPS_MODE = default
 CONFIG_LPS_MODE = default
 CONFIG_USB_AUTOSUSPEND = n
@@ -116,6 +111,7 @@ CONFIG_RTW_COUNTRY_IE_SLAVE_FLAGS = 0x01
 # CBP   : Force Contention Based Protocol
 # AUTO  : According to regulatory
 CONFIG_RTW_EDCCA_MODE_SEL = NORMAL
+
 CONFIG_SIGNAL_SCALE_MAPPING = n
 CONFIG_80211W = y
 CONFIG_REDUCE_TX_CPU_LOADING = n
@@ -159,7 +155,7 @@ CONFIG_PROC_DEBUG = y
 ######################## Wake On Lan ##########################
 CONFIG_WOWLAN = y
 #bit2: deauth, bit1: unicast, bit0: magic pkt.
-CONFIG_WAKEUP_TYPE = 0x0
+CONFIG_WAKEUP_TYPE = 0x7
 CONFIG_GOOGLE_CAST_WAKEUP = y
 CONFIG_WOW_IPS_MODE = default
 CONFIG_WOW_LPS_MODE = default
@@ -167,7 +163,7 @@ CONFIG_WOW_LPS_MODE = default
 CONFIG_SUSPEND_TYPE = 0
 CONFIG_WOW_STA_MIX = n
 CONFIG_GPIO_WAKEUP = y
-# Please contact with RTK support team first. After getting the agreement from RTK support team,
+# Please contact with RTK support team first. After getting the agreement from RTK support team, 
 # you are just able to modify the CONFIG_WAKEUP_GPIO_IDX with customized requirement.
 CONFIG_WAKEUP_GPIO_IDX = default
 CONFIG_HIGH_ACTIVE_DEV2HST = n
@@ -1263,6 +1259,7 @@ EXTRA_CFLAGS += -DCONFIG_RTW_EDCCA_MODE_SEL=3
 else ifeq ($(CONFIG_RTW_EDCCA_MODE_SEL), AUTO)
 EXTRA_CFLAGS += -DCONFIG_RTW_EDCCA_MODE_SEL=0xFF
 endif
+
 ifeq ($(CONFIG_RTW_ADAPTIVITY_EN), disable)
 EXTRA_CFLAGS += -DCONFIG_RTW_ADAPTIVITY_EN=0
 else ifeq ($(CONFIG_RTW_ADAPTIVITY_EN), enable)
@@ -1924,11 +1921,11 @@ ifeq ($(CONFIG_SDIO_HCI), y)
 _PLATFORM_FILES += platform/platform_ARM_SUNxI_sdio.o
 endif
 
-#ifeq ($(shell test $(CONFIG_RTW_ANDROID) -ge 11; echo $$?), 0)
+ifeq ($(shell test $(CONFIG_RTW_ANDROID) -ge 11; echo $$?), 0)
 # GKI build for Allwinner A527
-#ARCH ?= arm64
-#KSRC ?= $(KERNEL_SRC)
-#else
+ARCH ?= arm64
+KSRC ?= $(KERNEL_SRC)
+else
 # Other Allwinner platform
 ARCH := arm
 #CROSS_COMPILE := arm-none-linux-gnueabi-
@@ -1936,7 +1933,7 @@ CROSS_COMPILE=/home/android_sdk/Allwinner/a10/android-jb42/lichee-jb42/buildroot
 KVER  := 3.0.8
 #KSRC:= ../lichee/linux-3.0/
 KSRC=/home/android_sdk/Allwinner/a10/android-jb42/lichee-jb42/linux-3.0
-#endif
+endif
 
 endif
 
@@ -2473,7 +2470,7 @@ endif
 
 ############ ANDROID COMMON KERNEL ############
 export M ?= $(shell pwd)
-#export OUT_DIR ?= $(shell pwd)
+export OUT_DIR ?= $(shell pwd)
 ifneq ($(LLVM),)
 export CC_STRIP = llvm-strip
 else
@@ -2633,8 +2630,8 @@ ifeq ($(CONFIG_RTL8723B), y)
 $(MODULE_NAME)-$(CONFIG_MP_INCLUDED)+= core/rtw_bt_mp.o
 endif
 
-#obj-$(CONFIG_RTL8822CU) := $(MODULE_NAME).o
-obj-m := $(MODULE_NAME).o
+obj-$(CONFIG_RTL8822CU) := $(MODULE_NAME).o
+
 ############# MEMORY MANAGMENT #############
 ifneq ($(CONFIG_RTKM), n)
 _MEMM_FILES = core/rtw_prealloc.o
@@ -2661,7 +2658,7 @@ all: modules
 
 modules:
 	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KSRC) M=$(M)  modules
-	$(CC_STRIP) --strip-unneeded ${OUT_DIR}/$(M)/$(MODULE_NAME).ko
+#	$(CC_STRIP) --strip-unneeded ${OUT_DIR}/$(M)/$(MODULE_NAME).ko
 
 strip:
 	$(CC_STRIP) $(MODULE_NAME).ko --strip-unneeded
@@ -2676,8 +2673,8 @@ uninstall:
 
 modules_install:
 	$(MAKE) INSTALL_MOD_STRIP=1 M=$(M) -C $(KSRC) modules_install
-	mkdir -p ${OUT_DIR}/../vendor_lib/modules
-	cd ${OUT_DIR}/$(M)/; find -name $(MODULE_NAME).ko -exec cp {} ${OUT_DIR}/../vendor_lib/modules/ \;
+#	mkdir -p ${OUT_DIR}/../vendor_lib/modules
+#	cd ${OUT_DIR}/$(M)/; find -name $(MODULE_NAME).ko -exec cp {} ${OUT_DIR}/../vendor_lib/modules/ \;
 
 
 backup_rtlwifi:

@@ -4275,9 +4275,9 @@ int rtw_halmac_c2h_handle(struct dvobj_priv *d, u8 *c2h, u32 size)
 	case C2H_SUB_CMD_ID_FW_TBTT_RPT:
 	case C2H_SUB_CMD_ID_BCN_OFFLOAD:
 	case C2H_SUB_CMD_ID_FW_DBG_MSG:
-		RTW_INFO("%s: unhandled C2H, id=0xFF subid=0x%x len=%u\n",
+		RTW_PRINT("%s: unhandled C2H, id=0xFF subid=0x%x len=%u\n",
 			  __FUNCTION__, sub, C2H_HDR_GET_LEN(c2h_data));
-		RTW_INFO_DUMP("C2H: ", c2h_data, size - desc_size);
+		RTW_PRINT_DUMP("C2H: ", c2h_data, size - desc_size);
 		return 0;
 	}
 

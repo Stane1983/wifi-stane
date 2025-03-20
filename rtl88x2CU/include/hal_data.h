@@ -548,6 +548,9 @@ typedef struct hal_com_data {
 	u16	TypeALNA;
 	u16	TypeAPA;
 	u16	rfe_type;
+#ifdef CONFIG_RTL8822C
+	u8	hw_stype;
+#endif
 
 	u8	bLedOpenDrain; /* Support Open-drain arrangement for controlling the LED. Added by Roger, 2009.10.16. */
 	u32	ac_param_be; /* Original parameter for BE, use for EDCA turbo.	*/
@@ -846,6 +849,8 @@ typedef struct hal_com_data {
 #endif
 
 	_adapter *adapter;
+
+	s32 h2c_test_ret;
 } HAL_DATA_COMMON, *PHAL_DATA_COMMON;
 
 typedef struct hal_com_data HAL_DATA_TYPE, *PHAL_DATA_TYPE;

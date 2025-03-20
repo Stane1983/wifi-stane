@@ -22,6 +22,10 @@ MODULE_DESCRIPTION("Realtek Wireless Lan Driver");
 MODULE_AUTHOR("Realtek Semiconductor Corp.");
 MODULE_VERSION(DRIVERVERSION);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+#define strlcpy(p, q, s) strscpy(p, q, s)
+#endif
+
 /* module param defaults */
 int rtw_chip_version = 0x00;
 int rtw_rfintfs = HWPI;
@@ -2585,6 +2589,9 @@ struct dvobj_priv *devobj_init(void)
 #if defined(CONFIG_PLATFORM_RTK129X) && defined(CONFIG_PCI_HCI)
 	_rtw_spinlock_init(&pdvobj->io_reg_lock);
 #endif
+#ifdef CONFIG_PCI_HCI
+	_rtw_spinlock_init(&pdvobj->irq_th_lock);
+#endif
 #ifdef CONFIG_MBSSID_CAM
 	rtw_mbid_cam_init(pdvobj);
 #endif
@@ -2684,6 +2691,9 @@ void devobj_deinit(struct dvobj_priv *pdvobj)
 
 #if defined(CONFIG_PLATFORM_RTK129X) && defined(CONFIG_PCI_HCI)
 	_rtw_spinlock_free(&pdvobj->io_reg_lock);
+#endif
+#ifdef CONFIG_PCI_HCI
+	_rtw_spinlock_free(&pdvobj->irq_th_lock);
 #endif
 #ifdef CONFIG_MBSSID_CAM
 	rtw_mbid_cam_deinit(pdvobj);

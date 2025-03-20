@@ -2983,7 +2983,8 @@ void halrf_dpk_trigger(void *dm_void)
 		switch (dm->support_ic_type) {
 #if (RTL8822C_SUPPORT == 1)
 		case ODM_RTL8822C:
-			do_dpk_8822c(dm);
+			if((dm->rfe_type != 8) && (dm->rfe_type != 9))
+				do_dpk_8822c(dm);
 		break;
 #endif
 #if (RTL8814C_SUPPORT == 1)
@@ -3429,7 +3430,8 @@ void halrf_dpk_enable_disable(void *dm_void)
 	switch (dm->support_ic_type) {
 #if (RTL8822C_SUPPORT == 1)
 	case ODM_RTL8822C:
-		dpk_enable_disable_8822c(dm);
+		if((dm->rfe_type != 8) && (dm->rfe_type != 9))
+			dpk_enable_disable_8822c(dm);
 		break;
 #endif
 #if (RTL8195B_SUPPORT == 1)
@@ -3546,7 +3548,8 @@ void halrf_dpk_track(void *dm_void)
 
 #if (RTL8822C_SUPPORT == 1)
 	case ODM_RTL8822C:
-		dpk_track_8822c(dm);
+		if((dm->rfe_type != 8) && (dm->rfe_type != 9))
+			dpk_track_8822c(dm);
 		break;
 #endif
 

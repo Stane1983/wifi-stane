@@ -159,9 +159,11 @@
 
 /*
  * MLD related linux kernel patch in
- * Android Common Kernel android13-5.15(5.15.41)
+ * Android Common Kernel android13-5.15
+ * refs/heads/common-android13-5.15-2023-04 (5.15.94)
+ * refs/heads/android13-5.15-lts (5.15.106)
  */
-#if (defined(CONFIG_RTW_ANDROID) && (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 41)))
+#if (defined(CONFIG_AMLOGIC_KERNEL_VERSION) && (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 94)))
         #define CONFIG_MLD_KERNEL_PATCH
 #endif
 
@@ -615,6 +617,27 @@ extern struct net_device *rtw_alloc_etherdev(int sizeof_priv);
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0))
 #define dev_addr_mod(dev, offset, addr, len) _rtw_memcpy(&dev->dev_addr[offset], addr, len)
+#endif
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+/* This defines the direction arg to the DMA mapping routines. */
+#define PCI_DMA_BIDIRECTIONAL	DMA_BIDIRECTIONAL
+#define PCI_DMA_TODEVICE	DMA_TO_DEVICE
+#define PCI_DMA_FROMDEVICE	DMA_FROM_DEVICE
+#define PCI_DMA_NONE		DMA_NONE
+
+#define pci_alloc_consistent(pcidev, size, dma_handle) \
+	dma_alloc_coherent(&(pcidev)->dev, size, dma_handle, GFP_ATOMIC)
+#define pci_free_consistent(pcidev, size, vaddr, dma_handle) \
+	dma_free_coherent(&(pcidev)->dev, size, vaddr, dma_handle)
+#define pci_map_single(pcidev, ptr, size, direction) \
+	dma_map_single(&(pcidev)->dev, ptr, size, (enum dma_data_direction)direction)
+#define pci_unmap_single(pcidev, dma_addr, size, direction) \
+	dma_unmap_single(&(pcidev)->dev, dma_addr, size, (enum dma_data_direction)direction)
+#define pci_set_dma_mask(pcidev, mask) \
+	dma_set_mask(&(pcidev)->dev, mask)
+#define pci_set_consistent_dma_mask(pcidev, mask) \
+	dma_set_coherent_mask(&(pcidev)->dev, mask)
 #endif
 
 #endif /* __OSDEP_LINUX_SERVICE_H_ */

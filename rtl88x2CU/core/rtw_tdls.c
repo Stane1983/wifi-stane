@@ -456,15 +456,13 @@ void rtw_tdls_process_ht_cap(_adapter *padapter, struct sta_info *ptdls_sta, u8 
 
 		/* AMPDU Parameters field */
 		/* Get MIN of MAX AMPDU Length Exp */
-		if ((pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x3) > (data[2] & 0x3))
-			max_AMPDU_len = (data[2] & 0x3);
-		else
-			max_AMPDU_len = (pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x3);
+		max_AMPDU_len = GET_HT_CAP_ELE_MAX_AMPDU_LEN_EXP(pIE->data);
+		max_AMPDU_len = rtw_min((pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x3), max_AMPDU_len);
+
 		/* Get MAX of MIN MPDU Start Spacing */
-		if ((pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x1c) > (data[2] & 0x1c))
-			min_MPDU_spacing = (pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x1c);
-		else
-			min_MPDU_spacing = (data[2] & 0x1c);
+		min_MPDU_spacing = GET_HT_CAP_ELE_MIN_MPDU_S_SPACE(pIE->data);
+		min_MPDU_spacing = rtw_max((pmlmeinfo->HT_caps.u.HT_cap_element.AMPDU_para & 0x1c), (min_MPDU_spacing << 2));
+
 		ptdls_sta->htpriv.rx_ampdu_min_spacing = max_AMPDU_len | min_MPDU_spacing;
 
 		/* Check if sta support s Short GI 20M */

@@ -879,13 +879,14 @@ void update_network(WLAN_BSSID_EX *dst, WLAN_BSSID_EX *src,
 	u8 ss_smp = src->PhyInfo.SignalStrength;
 	long rssi_smp = src->Rssi;
 #endif
+	long rssi_new = src->Rssi;
 	long rssi_ori = dst->Rssi;
-
 	u8 sq_smp = src->PhyInfo.SignalQuality;
-	u8 ss_final;
-	u8 sq_final;
-	long rssi_final;
-
+	u8 ss_final = 0;
+	u8 sq_final = 0;
+	long rssi_final = 0;
+	u8 dst_rssi_is_valid = true;
+	u8 update_case = 0;
 
 #ifdef CONFIG_ANTENNA_DIVERSITY
 	rtw_hal_antdiv_rssi_compared(padapter, dst, src); /* this will update src.Rssi, need consider again */
@@ -902,41 +903,54 @@ void update_network(WLAN_BSSID_EX *dst, WLAN_BSSID_EX *src,
 	}
 #endif
 
+	if (src->PhyInfo.isValid && dst->PhyInfo.isValid && sq_smp != 101) {
+		/* Receiving the valid RSSI from correct channel and the RSSI stored in scan queue is also valid */
+		update_case = 1;
+	} else if (src->PhyInfo.isValid && !dst->PhyInfo.isValid) {
+		/* Replace the invalid RSSI stored in scan queue with the received valid RSSI even not from correct channel */
+		update_case = 2;
+	} else {
+		/* Don't update RSSI, use original RSSI */
+		update_case = 3;
+	}
+
 	/* The rule below is 1/5 for sample value, 4/5 for history value */
 	if (check_fwstate(&padapter->mlmepriv, WIFI_ASOC_STATE) && is_same_network(&(padapter->mlmepriv.cur_network.network), src, 0)) {
 		/* Take the recvpriv's value for the connected AP*/
 		ss_final = padapter->recvpriv.signal_strength;
 		sq_final = padapter->recvpriv.signal_qual;
 		/* the rssi value here is undecorated, and will be used for antenna diversity */
-		/* Don't update the RSSI average with scan result which RSSI is -110 */
-		if ((sq_smp != 101) && (src->Rssi != -110)) { /* from the right channel */
-			rssi_final = (src->Rssi + dst->Rssi * 4) / 5;
-		} else {
-			#ifdef DBG_SITESURVEY
-			if (src->Rssi == -110)
-				RTW_INFO("Don't update RSSI average of associated network %s " \
-					"with scan result which RSSI is -110\n", src->Ssid.Ssid);
-			#endif
+		switch (update_case) {
+		case 1:
+			rssi_final = (rssi_new + rssi_ori * 4) / 5;
+			break;
+		case 2:
+			rssi_final = rssi_new;
+			break;
+		case 3:
 			rssi_final = rssi_ori;
+			dst_rssi_is_valid = dst->PhyInfo.isValid; /* backup is_valid of dst */
+			break;
 		}
 	} else {
-		/* Don't update the RSSI average with scan result which RSSI is -110 */
-		if ((sq_smp != 101) && (src->Rssi != -110)) { /* from the right channel */
+		switch (update_case) {
+		case 1:
 			ss_final = ((u32)(src->PhyInfo.SignalStrength) + (u32)(dst->PhyInfo.SignalStrength) * 4) / 5;
 			sq_final = ((u32)(src->PhyInfo.SignalQuality) + (u32)(dst->PhyInfo.SignalQuality) * 4) / 5;
-			rssi_final = (src->Rssi + dst->Rssi * 4) / 5;
-		} else {
-			#ifdef DBG_SITESURVEY
-			if (src->Rssi == -110)
-				RTW_INFO("Don't update RSSI average of network %s " \
-					"with scan result which RSSI is -110\n", src->Ssid.Ssid);
-			#endif
-			/* bss info not receving from the right channel, use the original RX signal infos */
+			rssi_final = (rssi_new + rssi_ori * 4) / 5;
+			break;
+		case 2:
+			ss_final = src->PhyInfo.SignalStrength;
+			sq_final = src->PhyInfo.SignalQuality;
+			rssi_final = rssi_new;
+			break;
+		case 3:
 			ss_final = dst->PhyInfo.SignalStrength;
 			sq_final = dst->PhyInfo.SignalQuality;
-			rssi_final = dst->Rssi;
+			rssi_final = rssi_ori;
+			dst_rssi_is_valid = dst->PhyInfo.isValid; /* backup is_valid of dst */
+			break;
 		}
-
 	}
 
 	if (update_ie) {
@@ -944,12 +958,14 @@ void update_network(WLAN_BSSID_EX *dst, WLAN_BSSID_EX *src,
 		dst->Reserved[1] = src->Reserved[1];
 		_rtw_memcpy((u8 *)dst, (u8 *)src, get_WLAN_BSSID_EX_sz(src));
 	}
+
 #ifdef CONFIG_LAYER2_ROAMING
 	dst->tsf = src->tsf;
 #endif
 	dst->PhyInfo.SignalStrength = ss_final;
 	dst->PhyInfo.SignalQuality = sq_final;
 	dst->Rssi = rssi_final;
+	dst->PhyInfo.isValid = dst_rssi_is_valid;
 
 #if defined(DBG_RX_SIGNAL_DISPLAY_SSID_MONITORED) && 1
 	if (strcmp(dst->Ssid.Ssid, DBG_RX_SIGNAL_DISPLAY_SSID_MONITORED) == 0) {
@@ -1106,15 +1122,6 @@ bool rtw_update_scanned_network(_adapter *adapter, WLAN_BSSID_EX *target)
 	 * with this beacon's information */
 	/* if (rtw_end_of_queue_search(phead,plist)== _TRUE) { */
 	if (!target_find) {
-
-		/* Drop the scan result which RSSI is -110, means this packet's RSSI is 0 */
-		if (target->Rssi == -110) {
-			#ifdef DBG_SITESURVEY
-			RTW_INFO("Don't add network %s which RSSI is -110\n", target->Ssid.Ssid);
-			#endif
-			goto unlock_scan_queue;
-		}
-
 		if (_rtw_queue_empty(&(pmlmepriv->free_bss_pool)) == _TRUE) {
 			/* If there are no more slots, expire the choice */
 			/* list_del_init(&choice->list); */
@@ -1428,7 +1435,7 @@ void rtw_unassoc_sta_set_mode(_adapter *adapter, u8 stype, u8 mode)
 
 	if (adapter->mlmepriv.unassoc_sta_mode_of_stype[stype] == mode)
 		return;
-		
+
 	adapter->mlmepriv.unassoc_sta_mode_of_stype[stype] = mode;
 
 	rtw_run_in_thread_cmd_wait(adapter, ((void *)(rtw_hal_rcr_set_chk_bssid_act_non)), adapter, 2000);
@@ -2118,7 +2125,7 @@ alloc_fail:
 	} else {
 		if (rtw_chk_roam_flags(adapter, RTW_ROAM_ACTIVE)
 		#if (defined(CONFIG_RTW_WNM) && defined(CONFIG_RTW_80211R))
-			|| rtw_wnm_btm_roam_triggered(adapter)
+			|| rtw_ft_chk_flags((adapter), RTW_FT_BTM_ROAM)
 		#endif
 		) {
 			if (check_fwstate(pmlmepriv, WIFI_STATION_STATE)
@@ -2698,8 +2705,14 @@ static u32 _rtw_wait_join_done(_adapter *adapter, u8 abort, u32 timeout_ms)
 {
 	systime start;
 	u32 pass_ms;
-	struct mlme_priv *pmlmepriv = &(adapter->mlmepriv);
 	struct mlme_ext_priv *pmlmeext = &(adapter->mlmeextpriv);
+
+	if (!MLME_IS_LINKING(adapter)
+		#ifdef CONFIG_IOCTL_CFG80211
+		&& !rtw_cfg80211_is_connect_requested(adapter)
+		#endif
+	)
+		return 0;
 
 	start = rtw_get_current_time();
 
@@ -2708,7 +2721,7 @@ static u32 _rtw_wait_join_done(_adapter *adapter, u8 abort, u32 timeout_ms)
 		set_link_timer(pmlmeext, 1);
 
 	while (rtw_get_passing_time_ms(start) <= timeout_ms
-		&& (check_fwstate(pmlmepriv, WIFI_UNDER_LINKING)
+		&& (MLME_IS_LINKING(adapter)
 			#ifdef CONFIG_IOCTL_CFG80211
 			|| rtw_cfg80211_is_connect_requested(adapter)
 			#endif
@@ -2722,7 +2735,7 @@ static u32 _rtw_wait_join_done(_adapter *adapter, u8 abort, u32 timeout_ms)
 	}
 
 	if (abort) {
-		if (check_fwstate(pmlmepriv, WIFI_UNDER_LINKING)
+		if (MLME_IS_LINKING(adapter)
 			#ifdef CONFIG_IOCTL_CFG80211
 			|| rtw_cfg80211_is_connect_requested(adapter)
 			#endif
@@ -3119,6 +3132,9 @@ void rtw_sta_media_status_rpt(_adapter *adapter, struct sta_info *sta, bool conn
 	bool miracast_enabled = 0;
 	bool miracast_sink = 0;
 	u8 role = H2C_MSR_ROLE_RSVD;
+#ifdef CONFIG_FW_MULTI_PORT_SUPPORT
+	struct _ADAPTER *adapter_dftport = NULL;
+#endif
 
 	if (sta == NULL) {
 		RTW_PRINT(FUNC_ADPT_FMT" sta is NULL\n"
@@ -3144,6 +3160,16 @@ void rtw_sta_media_status_rpt(_adapter *adapter, struct sta_info *sta, bool conn
 	if (connected && !rtw_macid_is_bmc(macid_ctl, sta->cmn.mac_id)) {
 		miracast_enabled = STA_OP_WFD_MODE(sta) != 0 && is_miracast_enabled(adapter);
 		miracast_sink = miracast_enabled && (STA_OP_WFD_MODE(sta) & MIRACAST_SINK);
+
+#ifdef CONFIG_FW_MULTI_PORT_SUPPORT
+		adapter_dftport = rtw_select_and_set_dftport(adapter, _TRUE);
+#ifdef CONFIG_BT_COEXIST
+		if (GET_HAL_DATA(adapter)->EEPROMBluetoothCoexist == _TRUE) {
+			if (rtw_hal_set_wifi_btc_port_id_cmd(adapter_dftport) != _SUCCESS)
+				RTW_ERR("%s() rtw_hal_set_wifi_btc_port_id_cmd fail\n", __func__);
+		}
+#endif
+#endif /* CONFIG_FW_MULTI_PORT_SUPPORT */
 
 #ifdef CONFIG_TDLS
 		if (sta->tdls_sta_state & TDLS_LINKED_STATE)
@@ -3387,6 +3413,9 @@ void rtw_sta_timeout_event_callback(_adapter *adapter, u8 *pbuf)
 void rtw_sta_mstatus_disc_rpt(_adapter *adapter, u8 mac_id)
 {
 	struct macid_ctl_t *macid_ctl = &adapter->dvobj->macid_ctl;
+#ifdef CONFIG_FW_MULTI_PORT_SUPPORT
+	struct _ADAPTER *adapter_dftport= NULL;
+#endif
 
 	if (mac_id < macid_ctl->num) {
 		u8 id_is_shared = mac_id == RTW_DEFAULT_MGMT_MACID; /* TODO: real shared macid judgment */
@@ -3407,6 +3436,16 @@ void rtw_sta_mstatus_disc_rpt(_adapter *adapter, u8 mac_id)
 			/*if (MLME_IS_STA(adapter))*/
 			rtw_hal_macid_wakeup(adapter, mac_id);
 		}
+#ifdef CONFIG_FW_MULTI_PORT_SUPPORT
+		adapter_dftport = rtw_select_and_set_dftport(adapter, _FALSE);
+#ifdef CONFIG_BT_COEXIST
+		if (GET_HAL_DATA(adapter)->EEPROMBluetoothCoexist == _TRUE) {
+			if (rtw_hal_set_wifi_btc_port_id_cmd(adapter_dftport) != _SUCCESS)
+				RTW_ERR("%s() rtw_hal_set_wifi_btc_port_id_cmd fail\n", __func__);
+		}
+#endif
+#endif /* CONFIG_FW_MULTI_PORT_SUPPORT */
+
 	} else {
 		RTW_PRINT(FUNC_ADPT_FMT" invalid macid:%u\n"
 			  , FUNC_ADPT_ARG(adapter), mac_id);
@@ -3421,9 +3460,9 @@ void rtw_sta_mstatus_report(_adapter *adapter)
 
 	if (check_fwstate(pmlmepriv, WIFI_STATION_STATE) && check_fwstate(pmlmepriv, WIFI_ASOC_STATE)) {
 		psta = rtw_get_stainfo(&adapter->stapriv, tgt_network->network.MacAddress);
-		if (psta)
+		if (psta) {
 			rtw_sta_mstatus_disc_rpt(adapter, psta->cmn.mac_id);
-		else {
+		} else {
 			RTW_INFO("%s "ADPT_FMT" - mac_addr: "MAC_FMT" psta == NULL\n", __func__, ADPT_ARG(adapter), MAC_ARG(tgt_network->network.MacAddress));
 			rtw_warn_on(1);
 		}
@@ -3608,7 +3647,9 @@ void rtw_join_timeout_handler(void *ctx)
 {
 	_adapter *adapter = (_adapter *)ctx;
 	_irqL irqL;
-	struct	mlme_priv *pmlmepriv = &adapter->mlmepriv;
+	struct mlme_priv *pmlmepriv = &adapter->mlmepriv;
+	struct mlme_ext_priv *pmlmeext = &adapter->mlmeextpriv;
+	struct mlme_ext_info *pmlmeinfo = &(pmlmeext->mlmext_info);
 
 #if 0
 	if (rtw_is_drv_stopped(adapter)) {
@@ -3665,6 +3706,7 @@ void rtw_join_timeout_handler(void *ctx)
 	}
 
 	pmlmepriv->join_status = 0; /* reset */
+	pmlmeinfo->state = 0; /* clear WIFI_FW_STATE */
 
 	_exit_critical_bh(&pmlmepriv->lock, &irqL);
 

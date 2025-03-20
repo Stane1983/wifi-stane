@@ -8909,18 +8909,17 @@ void _issue_assocreq(_adapter *padapter, u8 is_reassoc)
 #endif/*CONFIG_RTL8812A*/
 
 	pattrib->last_txcmdsz = pattrib->pktlen;
+	rtw_buf_update(&pmlmepriv->assoc_req, &pmlmepriv->assoc_req_len, (u8 *)pwlanhdr, pattrib->pktlen);
+#ifdef CONFIG_RTW_WNM
+	if (is_reassoc == _TRUE)
+		rtw_wnm_update_reassoc_req_ie(padapter);
+#endif
 	dump_mgntframe(padapter, pmgntframe);
 
 	ret = _SUCCESS;
 
 exit:
-	if (ret == _SUCCESS) {
-		rtw_buf_update(&pmlmepriv->assoc_req, &pmlmepriv->assoc_req_len, (u8 *)pwlanhdr, pattrib->pktlen);
-	#ifdef CONFIG_RTW_WNM
-		if (is_reassoc == _TRUE)
-			rtw_wnm_update_reassoc_req_ie(padapter);
-	#endif
-	} else
+	if (ret == _FAIL)
 		rtw_buf_free(&pmlmepriv->assoc_req, &pmlmepriv->assoc_req_len);
 #ifdef CONFIG_P2P
 	if (p2pie)
@@ -10456,6 +10455,11 @@ u8 collect_bss_info(_adapter *padapter, union recv_frame *precv_frame, WLAN_BSSI
 	bssid->Rssi = precv_frame->u.hdr.attrib.phy_info.recv_signal_power; /* in dBM.raw data */
 	bssid->PhyInfo.SignalQuality = precv_frame->u.hdr.attrib.phy_info.signal_quality;/* in percentage */
 	bssid->PhyInfo.SignalStrength = precv_frame->u.hdr.attrib.phy_info.signal_strength;/* in percentage */
+	bssid->PhyInfo.isValid = precv_frame->u.hdr.attrib.phy_info.physts_rpt_valid == true ? 1 : 0;
+	if (!bssid->PhyInfo.isValid) {
+		bssid->PhyInfo.SignalStrength = 30;
+		bssid->Rssi = translate_percentage_to_dbm((u32)bssid->PhyInfo.SignalStrength);
+	}
 
 	/* get rx_snr */
 	if (precv_frame->u.hdr.attrib.data_rate >= DESC_RATE11M) {
@@ -16403,6 +16407,7 @@ u8 run_in_thread_hdl(_adapter *padapter, u8 *pbuf)
 int rtw_sae_preprocess(_adapter *adapter, const u8 *buf, u32 len, u8 tx)
 {
 #ifdef CONFIG_IOCTL_CFG80211
+	struct mlme_priv *pmlmepriv = &(adapter->mlmepriv);
 	const u8 *frame_body = buf + sizeof(struct rtw_ieee80211_hdr_3addr);
 	u16 alg;
 	u16 seq;
@@ -16428,6 +16433,12 @@ int rtw_sae_preprocess(_adapter *adapter, const u8 *buf, u32 len, u8 tx)
 		goto exit;
 	}
 #endif
+
+	/* STA mode connect WPA3 AP, but receive auth with status = 1 */
+	if (tx == false && status == WLAN_REASON_UNSPECIFIED && MLME_IS_STA(adapter)) {
+		RTW_INFO("WPA3 auth fail, so trigger join timeout to notify disconnection\n");
+		_set_timer(&pmlmepriv->assoc_timer, 1);
+	}
 
 	if (tx && (seq == 2) && (status == 0)) {
 		/* quere commit frame until external auth statue update */
