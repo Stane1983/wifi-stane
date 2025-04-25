@@ -87,8 +87,8 @@ dhd_wlan_set_power(wifi_adapter_info_t *adapter, int on)
 #ifdef CONFIG_HIBERNATION
 		printf("###mdelay(200)\n");
 		mdelay(WIFI_TURNON_DELAY);
-		printf("###sdio_reinit()\n");
-		sdio_reinit();
+		printf("###sdio_reinit(), but not need\n");
+		//sdio_reinit();
 #endif
 #endif
 #ifdef BCMDBUS
