@@ -13182,7 +13182,8 @@ static void _rtw_hal_set_fw_rsvd_page(_adapter *adapter, bool finished, u8 *page
 	*/
 	CurtPktPageNum = (u8)PageNum((MAX_BEACON_LEN), PageSize);
 #if defined(CONFIG_FW_HANDLE_TXBCN) || defined(CONFIG_PORT_BASED_TXBCN)
-	CurtPktPageNum = CurtPktPageNum * CONFIG_LIMITED_AP_NUM;
+	if (!is_wow_mode)
+		CurtPktPageNum = CurtPktPageNum * CONFIG_LIMITED_AP_NUM;
 #endif
 	TotalPageNum += CurtPktPageNum;
 
