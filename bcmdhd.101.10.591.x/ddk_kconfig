@@ -1,0 +1,66 @@
+config MODULE_NAME
+	string "dhd driver module name"
+	default "dhd.ko" if BCMDHD_SDIO
+	default "bcmdhd.ko" if BCMDHD_USB
+	default "dhdpci.ko"
+
+config BCMDHD_ANDROID_VERSION
+	int "dhd in android version"
+	default 14 if ANDROID_14
+	default 11
+
+config BCMDHD_SDIO
+	bool "dhd interface"
+	default n
+
+config ANDROID_14
+	bool "dhd support ANDROID_14"
+	default y
+
+config BCMDHD_REQUEST_FW
+	bool "dhd request fw"
+	default y
+
+config BCMDHD_OOB
+	bool "BCMDHD_OOB"
+	default y
+
+config BCMDHD_PROPTXSTATUS
+	bool "BCMDHD_PROPTXSTATUS"
+	default y
+
+config DHD_USE_STATIC_BUF
+	bool "DHD_USE_STATIC_BUF"
+	default y
+
+config BCMDHD_STATIC_BUF_IN_KERNEL
+	bool "BCMDHD_STATIC_BUF_IN_KERNEL"
+	default y
+
+config BCMDHD_AUTO_SELECT
+	bool "BCMDHD_AUTO_SELECT"
+	default y
+
+config BCMDHD_DEBUG
+	bool "BCMDHD_DEBUG"
+	default y
+
+config BCMDHD_TPUT
+	bool "BCMDHD_TPUT"
+	default y
+
+config MACH_PLATFORM
+	bool "MACH_PLATFORM"
+	default y
+
+config BCMDHD_NO_POWER_OFF
+	bool "BCMDHD_NO_POWER_OFF"
+	default y
+
+config BUS_TYPE
+	string "interface"
+	default "sdio" if BCMDHD_SDIO
+
+config ADAPTER_IDX_STR
+	string
+	default ""
