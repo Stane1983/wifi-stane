@@ -155,7 +155,7 @@ CONFIG_PROC_DEBUG = y
 ######################## Wake On Lan ##########################
 CONFIG_WOWLAN = y
 #bit2: deauth, bit1: unicast, bit0: magic pkt.
-CONFIG_WAKEUP_TYPE = 0x7
+CONFIG_WAKEUP_TYPE = 0x1
 CONFIG_GOOGLE_CAST_WAKEUP = y
 CONFIG_WOW_IPS_MODE = default
 CONFIG_WOW_LPS_MODE = default
