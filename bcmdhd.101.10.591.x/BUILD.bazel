@@ -267,6 +267,9 @@ ddk_module(
 		"DHD_WAKE_STATUS",
 		"WL_LATENCY_MODE",
 		"WL_SAR_TX_POWER",
+		"OOB_INTR_ONLY",
+		"CUSTOMER_OOB",
+		"HW_OOB",
 	],
 	copts = [
 		"-Wall",
