@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver - Dongle Host Driver (DHD) related
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -82,7 +82,6 @@ static s32 wl_dongle_glom(struct net_device *ndev, s32 glom, u32 dongle_align);
 #endif
 static s32 wl_dongle_scantime(struct net_device *ndev, s32 scan_assoc_time, s32 scan_unassoc_time);
 static s32 wl_dongle_offload(struct net_device *ndev, s32 arpoe, s32 arp_ol);
-static s32 wl_pattern_atoh(s8 *src, s8 *dst);
 static s32 wl_dongle_filter(struct net_device *ndev, u32 filter_mode);
 #endif /* !OEM_ANDROID */
 
@@ -159,17 +158,25 @@ int wl_cfg80211_register_if(struct bcm_cfg80211 *cfg,
 int wl_cfg80211_remove_if(struct bcm_cfg80211 *cfg,
 	int ifidx, struct net_device* ndev, bool rtnl_lock_reqd)
 {
+#ifdef DHD_PCIE_RUNTIMEPM
+	dhdpcie_runtime_bus_wake(cfg->pub, CAN_SLEEP(), __builtin_return_address(0));
+#endif /* DHD_PCIE_RUNTIMEPM */
 	return dhd_remove_if(cfg->pub, ifidx, rtnl_lock_reqd);
 }
 
 void wl_cfg80211_cleanup_if(struct net_device *net)
 {
 	struct bcm_cfg80211 *cfg = wl_get_cfg(net);
+#ifdef DHD_PCIE_RUNTIMEPM
+	dhdpcie_runtime_bus_wake(cfg->pub, CAN_SLEEP(), __builtin_return_address(0));
+#else
 	BCM_REFERENCE(cfg);
+#endif /* DHD_PCIE_RUNTIMEPM */
 	dhd_cleanup_if(net);
 }
 
-struct net_device * dhd_cfg80211_netdev_free(struct net_device *ndev)
+static struct net_device*
+dhd_cfg80211_netdev_free(struct net_device *ndev)
 {
 	struct bcm_cfg80211 *cfg;
 
@@ -384,32 +391,6 @@ wl_dongle_offload(struct net_device *ndev, s32 arpoe, s32 arp_ol)
 
 dongle_offload_out:
 	return err;
-}
-
-static s32 wl_pattern_atoh(s8 *src, s8 *dst)
-{
-	int i;
-	if (strncmp(src, "0x", 2) != 0 && strncmp(src, "0X", 2) != 0) {
-		WL_ERR(("Mask invalid format. Needs to start with 0x\n"));
-		return -1;
-	}
-	src = src + 2;		/* Skip past 0x */
-	if (strlen(src) % 2 != 0) {
-		WL_ERR(("Mask invalid format. Needs to be of even length\n"));
-		return -1;
-	}
-
-	for (i = 0; *src != '\0'; i++) {
-		char num[3];
-		if ((num[0] = src[0]) != '\0') {
-			num[1] = src[1];
-		}
-		num[2] = '\0';
-		dst[i] = (u8) simple_strtoul(num, NULL, 16);
-		src += 2;
-	}
-
-	return i;
 }
 
 static s32 wl_dongle_filter(struct net_device *ndev, u32 filter_mode)

@@ -1,7 +1,7 @@
 /*
  * Header for Linux cfg80211 scan
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -262,4 +262,11 @@ wl_cfg80211_clear_iw_ie(struct bcm_cfg80211 *cfg, struct net_device *ndev, s32 b
 #define FW_MAJOR_VER_PFN_CHSPEC_SUPPORTED(ver) \
 	((ver.wlc_ver_major > 12) || \
 	((ver.wlc_ver_major == 12) && (ver.wlc_ver_minor >= 3))) //43756E
+								 //
+#ifdef ROAM_CHANNEL_CACHE
+extern int init_roam_cache(struct bcm_cfg80211 *cfg, int ioctl_ver);
+extern void print_roam_cache(struct bcm_cfg80211 *cfg);
+extern void wl_update_roamscan_cache_by_band(struct net_device *dev, int band);
+#endif /* ROAM_CHANNEL_CACHE */
+
 #endif /* _wl_cfgscan_h_ */

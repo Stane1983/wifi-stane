@@ -1,7 +1,7 @@
 /*
  * DHD debugability support
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -61,7 +61,7 @@
 #include <dhd_linux_priv.h>
 #include <dhd_linux_wq.h>
 #endif /* DBG_PKT_MON */
-#if defined(DHD_PKT_LOGGING) && defined(DHD_PKT_LOGGING_DBGRING)
+#if defined(DHD_PKT_LOGGING) || defined(DBG_PKT_MON)
 #include <dhd_pktlog.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0))
 #include <linux/sched/clock.h>
@@ -476,7 +476,7 @@ dhd_dbg_msgtrace_msg_parser(void *event_data)
 #ifdef SHOW_LOGTRACE
 #define DATA_UNIT_FOR_LOG_CNT 4
 
-int
+static int
 replace_percent_p_to_x(char *fmt)
 {
 	int p_to_x_done = FALSE;
@@ -533,7 +533,7 @@ replace_percent_p_to_x(char *fmt)
 }
 
 /* To identify format of types %Ns where N >= 0 is a number */
-bool
+static bool
 check_valid_string_format(char *curr_ptr)
 {
 	char *next_ptr;
@@ -558,7 +558,7 @@ check_valid_string_format(char *curr_ptr)
 }
 
 /* To identify format of non string format types */
-bool
+static bool
 check_valid_non_string_format(char *curr_ptr)
 {
 	char *next_ptr;
@@ -618,7 +618,7 @@ done:
 #define EL_PARSE_VER	"V02"
 static uint64 verboselog_ts_saved = 0;
 
-bool
+static bool
 dhd_dbg_process_event_log_hdr(event_log_hdr_t *log_hdr, prcd_event_log_hdr_t *prcd_log_hdr)
 {
 	event_log_extended_hdr_t *ext_log_hdr;
@@ -788,7 +788,7 @@ dhd_dbg_verboselog_printf(dhd_pub_t *dhdp, prcd_event_log_hdr_t *plog_hdr,
 {
 	dhd_event_log_t *raw_event = (dhd_event_log_t *)raw_event_ptr;
 	uint16 count;
-	int log_level, id;
+	int log_level, id, len;
 	char fmtstr_loc_buf[ROMSTR_SIZE] = { 0 };
 	char (*str_buf)[SIZE_LOC_STR] = NULL;
 	char *str_tmpptr = NULL;
@@ -903,7 +903,9 @@ dhd_dbg_verboselog_printf(dhd_pub_t *dhdp, prcd_event_log_hdr_t *plog_hdr,
 				raw_event->fmts[plog_hdr->fmt_num]);
 			plog_hdr->count++;
 		} else {
-			snprintf(fmtstr_loc_buf, FMTSTR_SIZE, "CONSOLE_E:%u:%u %06d.%03d %s",
+			len = snprintf(fmtstr_loc_buf, FMTSTR_SIZE, PERCENT_S DHD_LOG_PREFIXS,
+				PRINTF_SYSTEM_TIME);
+			snprintf(fmtstr_loc_buf+len, FMTSTR_SIZE, "CONSOLE_E:%u:%u %06d.%03d %s",
 				logset, block,
 				(uint32)(log_ptr[plog_hdr->count - 1] / EL_MSEC_PER_SEC),
 				(uint32)(log_ptr[plog_hdr->count - 1] % EL_MSEC_PER_SEC),
@@ -1405,7 +1407,7 @@ dhd_dbg_trace_evnt_handler(dhd_pub_t *dhdp, void *event_data,
 /*
  * dhd_dbg_set_event_log_tag : modify the state of an event log tag
  */
-void
+static void
 dhd_dbg_set_event_log_tag(dhd_pub_t *dhdp, uint16 tag, uint8 set_num, uint8 is_set)
 {
 	wl_el_tag_params_t pars;
@@ -1643,7 +1645,8 @@ __dhd_dbg_pkt_hash(uintptr_t pkt, uint32 pktid)
 #define __TIMESPEC64_TO_US(ts) \
 	(((ts).tv_sec * USEC_PER_SEC) + ((ts).tv_nsec / NSEC_PER_USEC))
 
-uint32
+#ifdef DBG_PKT_MON
+static uint32
 __dhd_dbg_driver_ts_usec(void)
 {
 	struct osl_timespec ts;
@@ -1651,6 +1654,7 @@ __dhd_dbg_driver_ts_usec(void)
 	osl_get_monotonic_boottime(&ts);
 	return ((uint32)(__TIMESPEC64_TO_US(ts)));
 }
+#endif /* DBG_PKT_MON */
 
 wifi_tx_packet_fate
 __dhd_dbg_map_tx_status_to_pkt_fate(uint16 status)
@@ -1814,7 +1818,7 @@ __dhd_dbg_free_rx_pkts(dhd_pub_t *dhdp, dhd_dbg_rx_info_t *rx_pkts,
 	return BCME_OK;
 }
 
-void
+static void
 __dhd_dbg_dump_pkt_info(dhd_pub_t *dhdp, dhd_dbg_pkt_info_t *info)
 {
 	if (DHD_PKT_MON_DUMP_ON()) {
@@ -1831,7 +1835,7 @@ __dhd_dbg_dump_pkt_info(dhd_pub_t *dhdp, dhd_dbg_pkt_info_t *info)
 	}
 }
 
-void
+static void
 __dhd_dbg_dump_tx_pkt_info(dhd_pub_t *dhdp, dhd_dbg_tx_info_t *tx_pkt,
 	uint16 count)
 {
@@ -1842,7 +1846,7 @@ __dhd_dbg_dump_tx_pkt_info(dhd_pub_t *dhdp, dhd_dbg_tx_info_t *tx_pkt,
 	}
 }
 
-void
+static void
 __dhd_dbg_dump_rx_pkt_info(dhd_pub_t *dhdp, dhd_dbg_rx_info_t *rx_pkt,
 	uint16 count)
 {
@@ -2707,7 +2711,8 @@ dhd_dbg_process_tx_status(dhd_pub_t *dhdp, void *pkt,
 	} \
 }
 
-void print_roam_chan_list(char *prefix, uint chan_num, uint16 band_2g,
+static void
+print_roam_chan_list(char *prefix, uint chan_num, uint16 band_2g,
 	uint16 uni2a, uint8 uni3, uint8 *uni2c)
 {
 	struct bcmstrbuf b;

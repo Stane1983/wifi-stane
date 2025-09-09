@@ -1,7 +1,7 @@
 /*
  * Misc useful os-independent macros and functions.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -358,9 +358,9 @@ extern uint get_slicespecific_var_name(osl_t *osh, char *vars_table_accessor,
 #if defined(BCMNVRAMR) || defined(BCMNVRAMW)
 extern uint getgpiopin(char *vars, char *pin_name, uint def_pin);
 #endif /* BCMNVRAMR || BCMNVRAMW */
-#ifdef BCMDBG
+#if defined(BCMDBG) || defined(DHD_DEBUG)
 extern void prpkt(const char *msg, osl_t *osh, void *p0);
-#endif /* BCMDBG */
+#endif /* BCMDBG || DHD_DEBUG */
 #ifdef BCMPERFSTATS
 extern void bcm_perf_enable(void);
 extern void bcmstats(char *fmt);

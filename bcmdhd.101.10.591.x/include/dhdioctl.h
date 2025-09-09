@@ -5,7 +5,7 @@
  *
  * Definitions subject to change without notice.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -24,7 +24,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -279,7 +279,11 @@ typedef enum dhd_iface_mgmt_policy {
 #define DHD_MSGTRACE_VAL	0x200000
 #define DHD_FWLOG_VAL		0x400000
 #define DHD_DBGIF_VAL		0x800000
+#ifdef DHD_PCIE_RUNTIMEPM
 #define DHD_RPM_VAL		0x1000000
+#else
+#define DHD_RPM_VAL		DHD_ERROR_VAL
+#endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 #define DHD_PKT_MON_VAL		0x2000000
 #define DHD_PKT_MON_DUMP_VAL	0x4000000
 #define DHD_ERROR_MEM_VAL	0x8000000

@@ -1,7 +1,7 @@
 /*
  * Wifi dongle status Filter and Report
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -2044,7 +2044,7 @@ int ewpr_diff_serial(ewpr_serial_info_t *info, char *buf,
 	int buf_len, void *_f_op, void *_s_op, char del);
 int ewpr_single_serial(ewpr_serial_info_t *info, char *buf, int buf_len, void *ptr, char del);
 
-int
+static int
 ewpr_serial_basic(char *buf, int buf_len, uint32 data, int format, int display_type, char del)
 {
 	if (format == EWP_HEX) {

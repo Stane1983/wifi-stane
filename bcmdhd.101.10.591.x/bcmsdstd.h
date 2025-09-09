@@ -1,7 +1,7 @@
 /*
  *  'Standard' SDIO HOST CONTROLLER driver
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -314,4 +314,8 @@ extern void sdstd_enable_disable_periodic_timer(sdioh_info_t * sd, uint val);
 
 extern sdioh_info_t *sdioh_attach(osl_t *osh, void *bar0, uint irq);
 extern SDIOH_API_RC sdioh_detach(osl_t *osh, sdioh_info_t *sd);
+extern void* bcmsdh_probe(osl_t *osh, void *dev, void *sdioh, void *adapter_info, uint bus_type,
+	uint bus_num, uint slot_num);
+extern int bcmsdh_remove(bcmsdh_info_t *bcmsdh);
+
 #endif /* _BCM_SD_STD_H */

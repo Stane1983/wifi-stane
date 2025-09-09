@@ -1,7 +1,7 @@
 /*
  * DHD Protocol Module for CDC and BDC.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -70,9 +70,7 @@
 #include <dhd_wlfc.h>
 #endif
 
-#ifdef DHD_HWTSTAMP
 #include <dhd_linux_priv.h>
-#endif /* DHD_HWTSTAMP */
 #ifdef BCMDBUS
 #include <dhd_config.h>
 #endif /* BCMDBUS */
@@ -756,7 +754,7 @@ dhd_sync_with_dongle(dhd_pub_t *dhd)
 		dhd_conf_reset(dhd);
 		dhd_conf_set_chiprev(dhd, revinfo.chipnum, revinfo.chiprev);
 		dhd_conf_preinit(dhd);
-		dhd_conf_read_config(dhd, dhd->conf_path);
+		dhd_conf_read_config(dhd, dhd->info->conf_path);
 	}
 #endif /* BCMDBUS */
 

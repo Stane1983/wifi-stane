@@ -5,7 +5,7 @@
  * JTAG, 0/1/2 UARTs, clock frequency control, a watchdog interrupt timer,
  * GPIO interface, extbus, and support for serial and parallel flashes.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -24,7 +24,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -4262,6 +4262,7 @@ typedef volatile struct {
 #define CR4_43752_RAM_BASE                   (0x170000)
 #define CR4_43756_RAM_BASE                   (0x170000)
 #define CR4_43711_RAM_BASE                   (0x170000)
+#define CR4_4612_RAM_BASE                    (0x1B0000)
 #define CR4_4376_RAM_BASE                    (0x352000)
 #define CR4_4378_RAM_BASE                    (0x352000)
 #define CR4_4381_RAM_BASE                    (0x740000)
@@ -5389,5 +5390,14 @@ typedef volatile struct {
 #define BCM4387_SSSR_DUMP_AUX_SIZE		160000u
 #define BCM4387_SSSR_DUMP_AXI_SCAN		0xE9400000u
 #define BCM4387_SSSR_DUMP_SCAN_SIZE		32768u
+
+#ifdef BL_RAM_BOOT
+#define SIG_FILE_DOWNLOAD_ADDR                  0x24D000
+#else
+#define SIG_FILE_DOWNLOAD_ADDR                  0x1C0000
+#endif /* BL_RAM_BOOT */
+/* BL SYNC */
+#define BL_CONS_ADDR_REG_43711                  0x180000d8
+#define BL_CONS_ADDR_REG                        0x180021B4
 
 #endif	/* _SBCHIPC_H */

@@ -1,7 +1,7 @@
 /*
  * Linux OS Independent Layer
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -122,7 +122,7 @@ typedef struct dhd_map_item {
 typedef struct dhd_map_record {
 	uint32 items;		/* number of total items */
 	uint32 idx;		/* current index of metadata */
-	dhd_map_item_t map[0];	/* metadata storage */
+	dhd_map_item_t map[];	/* metadata storage */
 } dhd_map_log_t;
 
 void
@@ -817,7 +817,7 @@ osl_kvmalloc(osl_t *osh, uint size)
 
 	flags = CAN_SLEEP() ? GFP_KERNEL: GFP_ATOMIC;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0))
-	if ((addr = kmalloc(size, flags)) == NULL)
+	if ((addr = vmalloc(size)) == NULL)
 #else
 	if ((addr = kvmalloc(size, flags)) == NULL)
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0) */
@@ -867,11 +867,7 @@ osl_kvmfree(osl_t *osh, void *addr, uint size)
 
 		atomic_sub(size, &osh->cmn->malloced);
 	}
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0))
-	kfree(addr);
-#else
 	kvfree(addr);
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0) */
 }
 
 uint

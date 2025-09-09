@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver - Dongle Host Driver (DHD) related
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -69,4 +69,5 @@ int dhd_set_wsec_info(dhd_pub_t *dhd, uint32 data, int tag);
 #ifdef RPM_FAST_TRIGGER
 void dhd_trigger_rpm_fast(struct bcm_cfg80211 *cfg);
 #endif /* RPM_FAST_TRIGGER */
+extern void dhd_netdev_free(struct net_device *ndev);
 #endif /* __DHD_CFG80211__ */

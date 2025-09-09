@@ -1,7 +1,7 @@
 /*
  * Linux roam cache
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -47,6 +47,7 @@
 #include <bcmutils.h>
 #ifdef WL_CFG80211
 #include <wl_cfg80211.h>
+#include <wl_cfgscan.h>
 #endif
 #include <wldev_common.h>
 #if defined(__linux__)
@@ -275,7 +276,7 @@ int get_roam_channel_list(struct bcm_cfg80211 *cfg, chanspec_t target_chan,
 		n++;
 	}
 
-	WL_SCAN(("0x%04X\n", channels[0]));
+	WL_SCAN(("Chanspec = %s\n", wf_chspec_ntoa_ex(channels[0], chanbuf)));
 
 #ifdef WES_SUPPORT
 	if (cfg->roamscan_mode == ROAMSCAN_MODE_WES) {

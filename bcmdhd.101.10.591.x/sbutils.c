@@ -2,7 +2,7 @@
  * Misc utility routines for accessing chip-specific features
  * of the SiliconBackplane-based Broadcom chips.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -21,7 +21,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -899,12 +899,14 @@ sb_core_disable(const si_t *sih, uint32 bits)
 	sb = REGS2SB(sii->curmap);
 
 	/* if core is already in reset, just return */
-	if (R_SBREG(sii, &sb->sbtmstatelow) & SBTML_RESET)
+	if (R_SBREG(sii, &sb->sbtmstatelow) & SBTML_RESET) {
 		return;
+	}
 
 	/* if clocks are not enabled, put into reset and return */
-	if ((R_SBREG(sii, &sb->sbtmstatelow) & (SICF_CLOCK_EN << SBTML_SICF_SHIFT)) == 0)
+	if ((R_SBREG(sii, &sb->sbtmstatelow) & (SICF_CLOCK_EN << SBTML_SICF_SHIFT)) == 0) {
 		goto disable;
+	}
 
 	/* set target reject and spin until busy is clear (preserve core-specific bits) */
 	OR_SBREG(sii, &sb->sbtmstatelow, SBTML_REJ);
@@ -912,8 +914,9 @@ sb_core_disable(const si_t *sih, uint32 bits)
 	BCM_REFERENCE(dummy);
 	OSL_DELAY(1);
 	SPINWAIT((R_SBREG(sii, &sb->sbtmstatehigh) & SBTMH_BUSY), 100000);
-	if (R_SBREG(sii, &sb->sbtmstatehigh) & SBTMH_BUSY)
+	if (R_SBREG(sii, &sb->sbtmstatehigh) & SBTMH_BUSY) {
 		SI_ERROR(("sb_core_disable: target state still busy\n"));
+	}
 
 	/*
 	 * If core is initiator, set the Reject bit and allow Busy to clear.
@@ -937,8 +940,9 @@ sb_core_disable(const si_t *sih, uint32 bits)
 	OSL_DELAY(10);
 
 	/* don't forget to clear the initiator reject bit */
-	if (R_SBREG(sii, &sb->sbidlow) & SBIDL_INIT)
+	if (R_SBREG(sii, &sb->sbidlow) & SBIDL_INIT) {
 		AND_SBREG(sii, &sb->sbimstate, ~SBIM_RJ);
+	}
 
 disable:
 	/* leave reset and reject asserted */

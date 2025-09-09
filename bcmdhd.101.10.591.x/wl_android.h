@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver - Android related functions
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -39,9 +39,8 @@
  *
  * <<Broadcom-WL-IPTag/Dual:>>
  */
-
-#ifndef _wl_android_
-#define _wl_android_
+#ifndef _wl_android_h_
+#define _wl_android_h_
 
 #include <linux/module.h>
 #include <linux/netdevice.h>
@@ -289,4 +288,5 @@ extern int wl_android_bcnrecv_event(struct net_device *ndev,
 extern int wl_android_set_he_6g_band(struct net_device *dev, bool enable);
 #endif /* CUSTOM_CONTROL_HE_6G_FEATURES */
 extern int wl_android_rcroam_turn_on(struct net_device *dev, int rcroam_enab);
-#endif /* _wl_android_ */
+
+#endif /* _wl_android_h_ */

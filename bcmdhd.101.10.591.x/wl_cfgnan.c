@@ -1,7 +1,7 @@
 /*
  * Neighbor Awareness Networking
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -404,7 +404,8 @@ wl_cfgnan_remove_inst_id(struct bcm_cfg80211 *cfg, uint8 inst_id)
 	return ret;
 }
 
-s32 wl_cfgnan_parse_sdea_data(osl_t *osh, const uint8 *p_attr,
+static s32
+wl_cfgnan_parse_sdea_data(osl_t *osh, const uint8 *p_attr,
 		uint16 len, nan_event_data_t *tlv_data)
 {
 	const wifi_nan_svc_desc_ext_attr_t *nan_svc_desc_ext_attr = NULL;
@@ -493,7 +494,7 @@ fail:
  * This attribute contains some mandatory fields and some optional fields
  * depending on the content of the service discovery request.
  */
-s32
+static s32
 wl_cfgnan_parse_sda_data(osl_t *osh, const uint8 *p_attr,
 		uint16 len, nan_event_data_t *tlv_data)
 {
@@ -1235,7 +1236,7 @@ fail:
 	return ret;
 }
 
-int
+static int
 wl_cfg_nan_check_cmd_len(uint16 nan_iov_len, uint16 data_size,
 		uint16 *subcmd_len)
 {
@@ -1256,7 +1257,7 @@ wl_cfg_nan_check_cmd_len(uint16 nan_iov_len, uint16 data_size,
 	return ret;
 }
 
-int
+static int
 wl_cfgnan_config_eventmask(struct net_device *ndev, struct bcm_cfg80211 *cfg,
 	uint8 event_ind_flag, bool disable_events)
 {
@@ -3065,7 +3066,7 @@ fail:
 	return ret;
 }
 
-void
+static void
 wl_cfgnan_immediate_nan_disable_pending(struct bcm_cfg80211 *cfg)
 {
 	if (delayed_work_pending(&cfg->nancfg->nan_disable)) {
@@ -3668,8 +3669,10 @@ fail:
 
 	}
 done:
+#ifdef WLTDLS
 	/* Enable back TDLS if connected interface is <= 1 */
 	wl_cfg80211_tdls_config(cfg, TDLS_STATE_IF_DELETE, false);
+#endif /* WLTDLS */
 
 	/* reset conditon variable */
 	nancfg->nan_event_recvd = false;
@@ -3900,8 +3903,10 @@ wl_cfgnan_stop_handler(struct net_device *ndev,
 			WL_ERR(("nan disable failed ret = %d status = %d\n", ret, status));
 			goto fail;
 		}
+#ifdef WLTDLS
 		/* Enable back TDLS if connected interface is <= 1 */
 		wl_cfg80211_tdls_config(cfg, TDLS_STATE_IF_DELETE, false);
+#endif /* WLTDLS */
 	}
 
 	if (!nancfg->notify_user) {
@@ -4293,7 +4298,7 @@ wl_cfgnan_check_for_ranging(struct bcm_cfg80211 *cfg, struct ether_addr *peer)
 	return NULL;
 }
 
-nan_ranging_inst_t *
+static nan_ranging_inst_t *
 wl_cfgnan_get_rng_inst_by_id(struct bcm_cfg80211 *cfg, uint8 rng_id)
 {
 	uint8 i;
@@ -6040,7 +6045,7 @@ wl_cfgnan_aligned_data_size_of_opt_dp_params(struct bcm_cfg80211 *cfg, uint16 *d
 	return ret;
 }
 
-int
+static int
 wl_cfgnan_svc_get_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, uint16 cmd_id, nan_discover_cmd_data_t *cmd_data)
 {
@@ -6116,7 +6121,7 @@ fail:
 
 }
 
-int
+static int
 wl_cfgnan_svc_handler(struct net_device *ndev,
 	struct bcm_cfg80211 *cfg, uint16 cmd_id, nan_discover_cmd_data_t *cmd_data)
 {
@@ -7179,7 +7184,7 @@ end:
 }
 
 /* Adds peer to nan data peer list */
-void
+static void
 wl_cfgnan_data_add_peer(struct bcm_cfg80211 *cfg,
 		struct ether_addr *peer_addr)
 {
@@ -10102,7 +10107,7 @@ fail:
 	return ret;
 }
 
-s32
+static s32
 wl_nan_print_avail_stats(const uint8 *data)
 {
 	int idx;
@@ -10297,7 +10302,7 @@ static const struct net_device_ops wl_cfgnan_nmi_if_ops = {
 	.ndo_start_xmit = wl_cfgnan_nmi_start_xmit,
 };
 
-s32
+static s32
 wl_cfgnan_register_nmi_ndev(struct bcm_cfg80211 *cfg)
 {
 	int ret = 0;
@@ -10356,8 +10361,12 @@ wl_cfgnan_register_nmi_ndev(struct bcm_cfg80211 *cfg)
 	WL_MSG(ndev->name, "NMI Interface Registered\n");
 	return ret;
 fail:
-	free_netdev(ndev);
-	MFREE(cfg->osh, wdev, sizeof(*wdev));
+	if (ndev) {
+		free_netdev(ndev);
+	}
+	if (wdev) {
+		MFREE(cfg->osh, wdev, sizeof(*wdev));
+	}
 	return -ENODEV;
 }
 

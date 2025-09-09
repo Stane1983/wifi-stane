@@ -1,7 +1,7 @@
 /*
  * BCMSDH Function Driver for the native SDIO/MMC driver in the Linux Kernel
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -73,9 +73,6 @@
 extern void wl_cfg80211_set_parent_dev(void *dev);
 extern void sdioh_sdmmc_devintr_off(sdioh_info_t *sd);
 extern void sdioh_sdmmc_devintr_on(sdioh_info_t *sd);
-extern void* bcmsdh_probe(osl_t *osh, void *dev, void *sdioh, void *adapter_info, uint bus_type,
-	uint bus_num, uint slot_num);
-extern int bcmsdh_remove(bcmsdh_info_t *bcmsdh);
 
 int sdio_function_init(void);
 void sdio_function_cleanup(void);
@@ -108,8 +105,8 @@ static int sdioh_probe(struct sdio_func *func)
 	osl_t *osh = NULL;
 	sdioh_info_t *sdioh = NULL;
 
-	sd_err(("bus num (host idx)=%d, slot num (rca)=%d, caps=0x%x\n",
-		host_idx, rca, func->card->host->caps));
+	sd_err(("%s: bus num (host idx)=%d, slot num (rca)=%d, caps=0x%x\n",
+		__FUNCTION__, host_idx, rca, func->card->host->caps));
 	adapter = dhd_wifi_platform_get_adapter(SDIO_BUS, host_idx, rca);
 	if (adapter != NULL) {
 		sd_err(("found adapter info '%s'\n", adapter->name));
@@ -120,7 +117,7 @@ static int sdioh_probe(struct sdio_func *func)
 	} else {
 		sd_err(("can't find adapter info for this chip\n"));
 #ifdef ADAPTER_IDX
-		goto fail;
+		return -EBADSLT;
 #endif
 	}
 
@@ -142,11 +139,15 @@ static int sdioh_probe(struct sdio_func *func)
 	}
 	if (!(func->card->host->caps & MMC_CAP_NONREMOVABLE)) {
 		sd_err(("%s: MMC_CAP_NONREMOVABLE not enabled in SDIO driver\n", __FUNCTION__));
-//		func->card->host->caps |= MMC_CAP_NONREMOVABLE;
+#ifdef SDIO_DETECT_CHANGE
+		func->card->host->caps |= MMC_CAP_NONREMOVABLE;
+#endif /* SDIO_DETECT_CHANGE */
 	}
 	if ((func->card->host->caps & MMC_CAP_NEEDS_POLL)) {
 		sd_err(("%s: MMC_CAP_NEEDS_POLL enabled in SDIO driver\n", __FUNCTION__));
-//		func->card->host->caps &= ~MMC_CAP_NEEDS_POLL;
+#ifdef SDIO_DETECT_CHANGE
+		func->card->host->caps &= ~MMC_CAP_NEEDS_POLL;
+#endif /* SDIO_DETECT_CHANGE */
 	}
 	sdioh->bcmsdh = bcmsdh_probe(osh, &func->dev, sdioh, adapter, SDIO_BUS, host_idx, rca);
 	if (sdioh->bcmsdh == NULL) {
@@ -162,11 +163,20 @@ fail:
 		sdioh_detach(osh, sdioh);
 	if (osh != NULL)
 		osl_detach(osh);
+#ifdef SDIO_DETECT_CHANGE
+	func->card->host->caps &= ~MMC_CAP_NONREMOVABLE;
+	func->card->host->caps |= MMC_CAP_NEEDS_POLL;
+	mmc_detect_change(func->card->host, 0);
+#endif /* SDIO_DETECT_CHANGE */
 	return -ENOMEM;
 }
 
 static void sdioh_remove(struct sdio_func *func)
 {
+#ifdef SDIO_DETECT_CHANGE
+	int host_idx = func->card->host->index;
+	uint32 rca = func->card->rca;
+#endif /* SDIO_DETECT_CHANGE */
 	sdioh_info_t *sdioh;
 	osl_t *osh;
 
@@ -181,6 +191,13 @@ static void sdioh_remove(struct sdio_func *func)
 	bcmsdh_remove(sdioh->bcmsdh);
 	sdioh_detach(osh, sdioh);
 	osl_detach(osh);
+#ifdef SDIO_DETECT_CHANGE
+	sd_err(("%s: bus num (host idx)=%d, slot num (rca)=%d, caps=0x%x\n",
+		__FUNCTION__, host_idx, rca, func->card->host->caps));
+	func->card->host->caps &= ~MMC_CAP_NONREMOVABLE;
+	func->card->host->caps |= MMC_CAP_NEEDS_POLL;
+	mmc_detect_change(func->card->host, 0);
+#endif /* SDIO_DETECT_CHANGE */
 }
 
 static int bcmsdh_sdmmc_probe(struct sdio_func *func,
@@ -250,6 +267,7 @@ static const struct sdio_device_id bcmsdh_sdmmc_ids[] = {
 	{ SDIO_DEVICE(SDIO_VENDOR_ID_BROADCOM, BCM4381_CHIP_ID) },
 	{ SDIO_DEVICE(SDIO_VENDOR_ID_BROADCOM, BCM4382_CHIP_ID) },
 	{ SDIO_DEVICE(SDIO_VENDOR_ID_SYNAPTICS, BCM43711_CHIP_ID) },
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_SYNAPTICS, BCM4612_CHIP_ID) },
 	{ SDIO_DEVICE_CLASS(SDIO_CLASS_NONE)		},
 	{ 0, 0, 0, 0 /* end: all zeroes */
 	},
@@ -419,7 +437,7 @@ void sdio_func_unreg_notify(void)
 static struct sdio_driver bcmsdh_sdmmc_driver = {
 	.probe		= bcmsdh_sdmmc_probe,
 	.remove		= bcmsdh_sdmmc_remove,
-	.name		= "bcmsdh_sdmmc",
+	.name		= "bcmsdh_sdmmc"ADAPTER_IDX_STR,
 	.id_table	= bcmsdh_sdmmc_ids,
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 39)) && defined(CONFIG_PM_SLEEP)
 	.drv = {

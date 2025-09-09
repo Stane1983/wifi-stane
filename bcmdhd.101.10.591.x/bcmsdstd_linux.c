@@ -1,7 +1,7 @@
 /*
  *  'Standard' SDIO HOST CONTROLLER driver - linux portion
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -53,13 +53,6 @@
 #include <bcmsdstd.h>
 #include <bcmdevs.h>
 
-extern void* bcmsdh_probe(osl_t *osh, void *dev, void *sdioh, void *adapter_info, uint bus_type,
-	uint bus_num, uint slot_num);
-extern int bcmsdh_remove(bcmsdh_info_t *bcmsdh);
-
-/* Extern functions for sdio power save */
-extern uint8 sdstd_turn_on_clock(sdioh_info_t *sd);
-extern uint8 sdstd_turn_off_clock(sdioh_info_t *sd);
 /* Extern variable for sdio power save. This is enabled or disabled using the IOCTL call */
 extern uint sd_3_power_save;
 
@@ -84,7 +77,7 @@ struct sdos_info {
 static void
 sdstd_3_ostasklet(ulong data);
 static void
-sdstd_3_tuning_timer(ulong data);
+sdstd_3_tuning_timer(void *data);
 
 /* Interrupt handler */
 static irqreturn_t
@@ -239,7 +232,7 @@ sdstd_3_ostasklet(ulong data)
 }
 
 static void
-sdstd_3_tuning_timer(ulong data)
+sdstd_3_tuning_timer(void *data)
 {
 	struct sdos_info *sdos = (struct sdos_info *)data;
 /* 	uint8 timeout = 0; */

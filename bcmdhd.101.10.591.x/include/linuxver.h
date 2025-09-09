@@ -2,7 +2,7 @@
  * Linux-specific abstractions to gain some independence from linux kernel versions.
  * Pave over some 2.2 versus 2.4 versus 2.6 kernel differences.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -21,7 +21,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -61,6 +61,10 @@
 
 #include <typedefs.h>
 #include <linux/version.h>
+
+#define KERNEL_MAJOR	(LINUX_VERSION_CODE >> 16)
+#define KERNEL_MINOR	((LINUX_VERSION_CODE >> 8) & 0xFF)
+#define KERNEL_PATCH	(LINUX_VERSION_CODE & 0xFF)
 
 #ifndef RHEL_RELEASE_CODE
 #define RHEL_RELEASE_CODE	(0)
@@ -220,7 +224,7 @@ typedef irqreturn_t(*FN_ISR) (int irq, void *dev_id, struct pt_regs *ptregs);
 #include <uapi/linux/sched/types.h>
 #endif /* LINUX_VERS >= 4.11.0 */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)) && (LINUX_VERSION_CODE < KERNEL_VERSION(6, 13, 0))
 #include <net/lib80211.h>
 #endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)
@@ -956,7 +960,7 @@ not match our unaligned address for < 2.6.24
 
 #define KMALLOC_FLAG (CAN_SLEEP() ? GFP_KERNEL: GFP_ATOMIC)
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
 #define RANDOM32		get_random_u32
 #define RANDOM_BYTES		get_random_bytes
 #define SRANDOM32(entropy)	do { uint _entropy = (entropy); \
@@ -1004,7 +1008,9 @@ static inline struct inode *file_inode(const struct file *f)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 // New google android GKI not allow kernel_write/kernel_read, and use
 // below for temporary overcome, and waiting for get rid of that for future
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
 #endif // LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 #define vfs_write(fp, buf, len, pos) kernel_write(fp, buf, len, pos)
@@ -1072,6 +1078,14 @@ static inline void do_gettimeofday(struct timeval *tv)
 #define CFG80211_BKPORT_MLO
 #endif /* ANDROID_VERSION >= 13 && KERNEL >= 5.15.41 */
 #endif /* ANDROID_BKPORT */
+
+#if ANDROID_VERSION >= 12
+/* Start from Android 12, nl80211_refresh_mac() will be refresh even wlan0 at up state currently in
+ * wpa_driver_nl80211_event_rtm_newlink, so DHD_NOTIFY_MAC_CHANGED is not needed to use
+ * dev_close()/dev_open() to notify wpa_supplicant.
+ */
+#undef DHD_NOTIFY_MAC_CHANGED
+#endif /* ANDROID_VERSION >= 13 */
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 2) || \
 	defined(CFG80211_BKPORT_MLO)

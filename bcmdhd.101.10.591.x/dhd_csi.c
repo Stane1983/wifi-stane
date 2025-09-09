@@ -1,7 +1,7 @@
 /*
  * Broadcom Dongle Host Driver (DHD), Channel State information Module
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -530,8 +530,8 @@ int dhd_csi_data_queue_polling(dhd_pub_t *dhdp, char *buf, uint count)
 }
 
 static int dhd_csi_data_append(dhd_pub_t *dhdp, struct csi_cfr_node *ptr,
-						uint32 data_length, uint32 remain_length,
-						const uint8 *pData)
+                               uint32 data_length, uint32 remain_length,
+                               const uint8 *pData)
 {
 	syna_csi_common_header  *pEntry = NULL;
 	int                      error_status = 0;

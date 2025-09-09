@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver scan related code
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -143,9 +143,6 @@
 #define FIRST_SCAN_ACTIVE_DWELL_TIME_MS 40
 bool g_first_broadcast_scan = TRUE;
 #endif /* USE_INITIAL_2G_SCAN || USE_INITIAL_SHORT_DWELL_TIME */
-#ifdef P2P_LISTEN_OFFLOADING
-void wl_cfg80211_cancel_p2plo(struct bcm_cfg80211 *cfg);
-#endif /* P2P_LISTEN_OFFLOADING */
 static void _wl_notify_scan_done(struct bcm_cfg80211 *cfg, bool aborted);
 static s32 wl_notify_escan_complete(struct bcm_cfg80211 *cfg,
 	struct net_device *ndev, bool aborted);
@@ -462,10 +459,10 @@ s32 wl_inform_single_bss(struct bcm_cfg80211 *cfg, wl_bss_info_v109_t *bi, bool 
 	channel = ieee80211_get_channel(wiphy, freq);
 	memcpy(tmp_buf, bi->SSID, bi->SSID_len);
 	tmp_buf[bi->SSID_len] = '\0';
-	WL_SCAN(("BSSID %pM, channel %s-%-3d(%3d %3sMHz), rssi %3d, capa 0x%-4x, "
+	WL_SCAN(("BSSID %pM, channel %s-%-3d(%4d %3sMHz), rssi %3d, capa 0x%-4x, "
 		"mgmt_type %d, frame_len %3d, SSID \"%s\"\n",
 		&bi->BSSID, CHSPEC2BANDSTR(chanspec), notif_bss_info->channel,
-		CHSPEC_CHANNEL(chanspec), wf_chspec_to_bw_str(chanspec),
+		freq, wf_chspec_to_bw_str(chanspec),
 		notif_bss_info->rssi, mgmt->u.beacon.capab_info, mgmt_type,
 		notif_bss_info->frame_len, tmp_buf));
 	if (unlikely(!channel)) {
@@ -549,7 +546,7 @@ out_err:
 	return err;
 }
 
-struct wireless_dev * wl_get_scan_wdev(struct bcm_cfg80211 *cfg);
+static struct wireless_dev * wl_get_scan_wdev(struct bcm_cfg80211 *cfg);
 struct net_device *
 wl_get_scan_ndev(struct bcm_cfg80211 *cfg)
 {
@@ -1598,7 +1595,7 @@ wl_retrieve_wps_attribute(const u8 *buf, u16 element_id)
 	return wl_find_attribute(attrib, len, element_id);
 }
 
-bool
+static bool
 wl_is_wps_enrollee_active(struct net_device *ndev, const u8 *ie_ptr, u16 len)
 {
 	const u8 *ie;
@@ -1779,7 +1776,7 @@ chanspec_t wl_freq_to_chanspec(int freq)
 static void
 wl_cfgscan_populate_scan_channel(struct bcm_cfg80211 *cfg,
 	struct ieee80211_channel **channels, u32 n_channels,
-	u16 *channel_list, struct wl_chan_info *chan_info)
+	u16 *channel_list, struct wl_ext_chan_info *chan_info)
 {
 	u32 i, chanspec = 0;
 
@@ -1830,8 +1827,8 @@ wl_cfgscan_populate_scan_channels(struct bcm_cfg80211 *cfg,
 
 #ifndef DHD_DFS_MASTER
 		if (skip_dfs && (IS_RADAR_CHAN(channels[i]->flags))) {
-			WL_SCAN(("Skipping radar chan: %s-%d, chanspec: %x\n",
-				CHSPEC2BANDSTR(chanspec), wf_chspec_ctlchan(chanspec), channel_list[j]));
+			WL_SCAN(("chan: %s-%d, chanspec: %x(Skipping radar)\n",
+				CHSPEC2BANDSTR(chanspec), wf_chspec_ctlchan(chanspec), chanspec));
 			continue;
 		}
 #endif /* DHD_DFS_MASTER */
@@ -1966,7 +1963,7 @@ wl_scan_prep(struct bcm_cfg80211 *cfg, struct net_device *ndev, void *scan_param
 	struct cfg80211_scan_request *request)
 {
 #ifdef SCAN_SUPPRESS
-	struct wl_chan_info chan_info;
+	struct wl_ext_chan_info chan_info;
 	u32 channel;
 #endif
 	wl_scan_params_v1_t *params = NULL;
@@ -2666,6 +2663,7 @@ wl_set_p2p_scan_states(struct bcm_cfg80211 *cfg, struct net_device *ndev)
 #endif
 		}
 		wl_clr_p2p_status(cfg, GO_NEG_PHASE);
+		wl_cfg80211_btc_mode(cfg, TRUE);
 		WL_DBG(("P2P: GO_NEG_PHASE status cleared \n"));
 		p2p_scan(cfg) = true;
 	}
@@ -3050,7 +3048,7 @@ wl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
  * held so that scan_request data structures doesn't
  * get modified in between.
  */
-struct wireless_dev *
+static struct wireless_dev *
 wl_get_scan_wdev(struct bcm_cfg80211 *cfg)
 {
 	struct wireless_dev *wdev = NULL;
@@ -3681,31 +3679,6 @@ scan_done_out:
 	WL_DBG(("cfg80211_scan_done\n"));
 	mutex_unlock(&cfg->scan_sync);
 	return err;
-}
-
-void wl_notify_scan_done(struct bcm_cfg80211 *cfg, bool aborted)
-{
-#if defined(CONFIG_TIZEN)
-	struct net_device *ndev = NULL;
-#endif /* CONFIG_TIZEN */
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0))
-	struct cfg80211_scan_info info;
-
-	bzero(&info, sizeof(struct cfg80211_scan_info));
-	info.aborted = aborted;
-	cfg80211_scan_done(cfg->scan_request, &info);
-#else
-	cfg80211_scan_done(cfg->scan_request, aborted);
-#endif
-
-#if defined(CONFIG_TIZEN)
-	ndev = bcmcfg_to_prmry_ndev(cfg);
-	if (aborted)
-		net_stat_tizen_update_wifi(ndev, WIFISTAT_SCAN_ABORT);
-	else
-		net_stat_tizen_update_wifi(ndev, WIFISTAT_SCAN_DONE);
-#endif /* CONFIG_TIZEN */
 }
 
 #if defined(SUPPORT_RANDOM_MAC_SCAN)
@@ -4607,6 +4580,9 @@ static void wl_scan_timeout(unsigned long data)
 #endif /* BCMDONGLEHOST && OEM_ANDROID */
 
 #if defined(BCMDONGLEHOST) && defined(DHD_FW_COREDUMP)
+	if (dhdp->conf->chip == BCM4359_CHIP_ID)
+		dhdp->scan_timeout_occurred = FALSE;
+	else
 	if (dhdp->memdump_enabled) {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(OEM_ANDROID)
 		dhd_os_send_hang_message(dhdp);
@@ -5591,6 +5567,9 @@ wl_cfgscan_listen_on_channel(struct bcm_cfg80211 *cfg, struct wireless_dev *wdev
 	chanspec = wl_freq_to_chanspec(channel->center_freq);
 	chanspec_list[0] = chanspec;
 
+	WL_SCAN(("Listen on channel %s-%-3d(%3sMHz)\n",
+		CHSPEC2BANDSTR(chanspec), wf_chspec_ctlchan(chanspec),
+		wf_chspec_to_bw_str(chanspec)));
 	err = wldev_iovar_setbuf_bsscfg(ndev, "escan", params, params_size,
 		cfg->escan_ioctl_buf, WLC_IOCTL_MEDLEN, bssidx, &cfg->ioctl_buf_sync);
 	if (unlikely(err)) {
@@ -5685,6 +5664,14 @@ wl_cfgscan_remain_on_channel(struct wiphy *wiphy, bcm_struct_cfgdev *cfgdev,
 		err = BCME_BADARG;
 		goto exit;
 	}
+
+#ifdef WL_EXT_IAPSTA
+	if (wl_ext_wiphy_updating(ndev)) {
+		WL_SCAN(("scan suppressed\n"));
+		err = BCME_BUSY;
+		goto exit;
+	}
+#endif
 
 	target_channel = ieee80211_frequency_to_channel(channel->center_freq);
 

@@ -3,6 +3,7 @@
 #define _dhd_config_
 
 #include <bcmdevs.h>
+#include <bcmdevs_legacy.h>
 #include <siutils.h>
 #include <dngl_stats.h>
 #include <dhd.h>
@@ -10,9 +11,11 @@
 #include <802.11.h>
 
 /* message levels */
-#define CONFIG_ERROR_LEVEL	(1 << 0)
-#define CONFIG_TRACE_LEVEL	(1 << 1)
-#define CONFIG_MSG_LEVEL	(1 << 0)
+#define CONFIG_ERROR_LEVEL	0x0001
+#define CONFIG_TRACE_LEVEL	0x0002
+#define CONFIG_INFO_LEVEL	0x0004
+#define CONFIG_CTL_LEVEL	0x0010
+#define CONFIG_MSG_LEVEL	0x0001
 
 #define FW_TYPE_STA     0
 #define FW_TYPE_APSTA   1
@@ -21,7 +24,6 @@
 #define FW_TYPE_EZMESH  4
 #define FW_TYPE_ES      5
 #define FW_TYPE_MFG     6
-#define FW_TYPE_MINIME  7
 
 #define FW_PATH_AUTO_SELECT 1
 #ifdef BCMDHD_MDRIVER
@@ -123,9 +125,9 @@ typedef struct mchan_params {
 typedef enum MCHAN_MODE {
 	MCHAN_AUTO = -1,	/* Auto selection by Chip */
 	MCHAN_SCC = 0,		/* Same Channel Concurrent */
-	MCHAN_SBSC = 1,		/* Same Band Same Channel concurrent */
+	MCHAN_SBSC = 1,		/* Same Band Same Channel Concurrent */
 	MCHAN_MCC = 2,		/* Multiple Channel Concurrent */
-	MCHAN_RSDB = 3		/* RSDB concurrent */
+	MCHAN_RSDB = 3		/* RSDB Concurrent */
 } mchan_mode_t;
 
 #ifdef SCAN_SUPPRESS
@@ -214,6 +216,12 @@ enum enq_pkt_type {
 	ENQ_PKT_TYPE_ICMP	= (1 << (3)),
 };
 
+enum path_type {
+	PATH_BY_CHIP = 0,
+	PATH_BY_CHIP_BUS = 1,
+	PATH_BY_MODULE = 2,
+};
+
 typedef struct dhd_conf {
 	uint devid;
 	uint chip;
@@ -240,13 +248,15 @@ typedef struct dhd_conf {
 	int bw_cap[2];
 	int ap_mchan_mode;
 	int go_mchan_mode;
-	bool csa;
+	int csa;
 	wl_country_t cspec;
+	bool wbtext;
+	bool fw_wbtext;
 	uint roam_off;
 	uint roam_off_suspend;
 	int roam_trigger[2];
-	int roam_scan_period[2];
 	int roam_delta[2];
+	int roam_scan_period;
 	int fullroamperiod;
 #ifdef WL_SCHED_SCAN
 	int max_sched_scan_reqs;
@@ -264,7 +274,6 @@ typedef struct dhd_conf {
 	conf_pkt_filter_del_t pkt_filter_del;
 	char *magic_pkt_filter_add;
 	int magic_pkt_hdr_len;
-	int pkt_filter_cnt_default;
 #endif
 	int srl;
 	int lrl;
@@ -296,9 +305,6 @@ typedef struct dhd_conf {
 	int max_hdr_read;
 #endif
 	bool oob_enabled_later;
-#ifdef MINIME
-	uint32 ramsize;
-#endif
 #if defined(SDIO_ISR_THREAD)
 	bool intr_extn;
 #endif
@@ -324,6 +330,9 @@ typedef struct dhd_conf {
 	int enq_hdr_pkt;
 	int aspm;
 	int l1ss;
+#ifdef DHD_PCIE_RUNTIMEPM
+	bool rpm;
+#endif /* DHD_PCIE_RUNTIMEPM */
 #endif
 	int dpc_cpucore;
 	int rxf_cpucore;
@@ -405,10 +414,10 @@ typedef struct dhd_conf {
 	bool pktsetsum;
 #endif
 #ifdef SET_XPS_CPUS
-	bool xps_cpus;
+	char *xps_cpus;
 #endif
 #ifdef SET_RPS_CPUS
-	bool rps_cpus;
+	char *rps_cpus;
 #endif
 #ifdef CHECK_DOWNLOAD_FW
 	bool fwchk;
@@ -420,19 +429,25 @@ typedef struct dhd_conf {
 void dhd_conf_get_otp(dhd_pub_t *dhd, bcmsdh_info_t *sdh, si_t *sih);
 void dhd_conf_set_txglom_params(dhd_pub_t *dhd, bool enable);
 bool dhd_conf_legacy_otp_chip(dhd_pub_t *dhd);
+bool dhd_conf_syna_secure_chip(dhd_pub_t *dhd);
 #endif
 #ifdef BCMPCIE
-bool dhd_conf_legacy_msi_chip(dhd_pub_t *dhd);
+bool dhd_conf_legacy_pcie_chip(dhd_pub_t *dhd);
 #if defined(BCMPCIE_CTO_PREVENTION)
 bool dhd_conf_legacy_cto_chip(uint16 chip);
 #endif
 #endif
+bool dhd_conf_get_csa(dhd_pub_t *dhd);
+int dhd_conf_rsdb_chip(dhd_pub_t *dhd);
 #ifdef WL_CFG80211
 bool dhd_conf_legacy_chip_check(dhd_pub_t *dhd);
 bool dhd_conf_new_chip_check(dhd_pub_t *dhd);
 bool dhd_conf_extsae_chip(dhd_pub_t *dhd);
 #endif
-void dhd_conf_set_path_params(dhd_pub_t *dhd, char *fw_path, char *nv_path);
+void dhd_conf_set_path(dhd_pub_t *dhd, char *dst_path, char *src_path,
+	char *prefix, char *file_ext, int path_type);
+void dhd_conf_update_path(dhd_pub_t *dhd);
+void dhd_conf_set_path_params(dhd_pub_t *dhd);
 int dhd_conf_set_intiovar(dhd_pub_t *dhd, int ifidx, uint cmd, char *name,
 	int val, int def, bool down);
 int dhd_conf_get_band(dhd_pub_t *dhd);
@@ -443,11 +458,13 @@ int dhd_conf_get_country(dhd_pub_t *dhd, wl_country_t *cspec);
 int dhd_ccode_map_country_all(dhd_pub_t *dhd, wl_country_t *cspec);
 int dhd_ccode_map_country_list(dhd_pub_t *dhd, wl_country_t *cspec);
 #endif
+void dhd_conf_set_roam(dhd_pub_t *dhd, int ifidx);
 void dhd_conf_set_wme(dhd_pub_t *dhd, int ifidx, int mode);
 void dhd_conf_set_mchan_bw(dhd_pub_t *dhd, int go, int source);
-void dhd_conf_add_pkt_filter(dhd_pub_t *dhd);
 bool dhd_conf_del_pkt_filter(dhd_pub_t *dhd, uint32 id);
 void dhd_conf_discard_pkt_filter(dhd_pub_t *dhd);
+void dhd_conf_enable_packet_filter(int value, dhd_pub_t *dhd);
+void dhd_conf_set_packet_filter(dhd_pub_t *dhd);
 int dhd_conf_read_config(dhd_pub_t *dhd, char *conf_path);
 int dhd_conf_set_chiprev(dhd_pub_t *dhd, uint chip, uint chiprev);
 uint dhd_conf_get_chip(void *context);

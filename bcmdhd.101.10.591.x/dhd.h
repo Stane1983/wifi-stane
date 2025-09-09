@@ -4,7 +4,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -23,7 +23,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -69,7 +69,7 @@
 #include <linux/unaligned.h>
 #else
 #include <asm/unaligned.h>
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0) */
+#endif /* KERNEL >= 6.12 */
 #include <linux/fs.h>
 #include <linux/namei.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
@@ -127,6 +127,7 @@ int get_scheduler_policy(struct task_struct *p);
 #endif /* WL_CFGVENDOR_SEND_HANG_EVENT */
 #include <dngl_stats.h>
 #include <hnd_pktq.h>
+#include <fwpkg_utils.h>
 
 #ifdef DEBUG_DPC_THREAD_WATCHDOG
 #define MAX_RESCHED_CNT 600
@@ -574,30 +575,12 @@ enum dhd_op_flags {
 #endif /* OEM_ANDROID */
 #endif /* CONFIG_BCMDHD_CLM_PATH */
 
-#ifdef DHD_LINUX_STD_FW_API
 #ifndef CONFIG_BCMDHD_CONFIG_SAR_PATH
 #define CONFIG_BCMDHD_CONFIG_SAR_PATH  "sar_config.ini"
 #endif /* CONFIG_BCMDHD_CONFIG_SAR_PATH */
 #ifndef CONFIG_BCMDHD_CONFIG_PATH
 #define CONFIG_BCMDHD_CONFIG_PATH	"wlan_config.ini"
 #endif /* CONFIG_BCMDHD_CONFIG_PATH */
-#else
-#ifndef CONFIG_BCMDHD_CONFIG_SAR_PATH
-#ifdef OEM_ANDROID
-#define CONFIG_BCMDHD_CONFIG_SAR_PATH  "/system/vendor/etc/wifi/sar_config.ini"
-#else /* OEM_ANDROID */
-#define CONFIG_BCMDHD_CONFIG_SAR_PATH  "/var/run/sar_config.ini"
-#endif /* OEM_ANDROID */
-#endif /* CONFIG_BCMDHD_CONFIG_SAR_PATH */
-
-#ifndef CONFIG_BCMDHD_CONFIG_PATH
-#ifdef OEM_ANDROID
-#define CONFIG_BCMDHD_CONFIG_PATH  "/system/vendor/etc/wifi/wlan_config.ini"
-#else /* OEM_ANDROID */
-#define CONFIG_BCMDHD_CONFIG_PATH  "/var/run/wlan_config.ini"
-#endif /* OEM_ANDROID */
-#endif /* CONFIG_BCMDHD_CONFIG_PATH */
-#endif /* DHD_LINUX_STD_FW_API */
 
 #ifndef CONFIG_BCMDHD_MAP_PATH
 	#ifdef OEM_ANDROID
@@ -607,8 +590,6 @@ enum dhd_op_flags {
 	#endif // OEM_ANDROID
 #endif /* CONFIG_BCMDHD_MAP_PATH */
 
-/* for file operation compatibility */
-#ifdef DHD_LINUX_STD_FW_API
 	// kernel has enable the corresponding API
 	#if defined(CONFIG_FW_LOADER) || (defined(CONFIG_FW_LOADER_MODULE) && defined(MODULE))
 		#ifndef DHD_FW_NAME
@@ -630,12 +611,6 @@ enum dhd_op_flags {
 		#error "*Error, KERNEL does not enable the CONFIG_FW_LOADER(_MODULE) "\
 			"for DHD_LINUX_STD_FW_API!"
 	#endif // defined(CONFIG_FW_LOADER) || (defined(CONFIG_FW_LOADER_MODULE) && defined(MODULE))
-#else /* DHD_LINUX_STD_FW_API */
-	#ifndef DHD_SUPPORT_VFS_CALL
-		#error "*Error, Makefile should pick up either "\
-			"'DHD_LINUX_STD_FW_API' or 'DHD_SUPPORT_VFS_CALL'!"
-	#endif // DHD_SUPPORT_VFS_CALL
-#endif /* DHD_LINUX_STD_FW_API */
 
 #define WL_CCODE_NULL_COUNTRY  "#n"
 
@@ -1862,6 +1837,9 @@ typedef struct dhd_pub {
 	dhd_db7_info_t db7_trap;
 	bool fw_preinit;
 	bool ring_attached;
+#ifdef DHD_PCIE_RUNTIMEPM
+	bool rx_pending_due_to_rpm;
+#endif /* DHD_PCIE_RUNTIMEPM */
 	union {
 		wl_roam_stats_v1_t v1;
 	} roam_evt;
@@ -1967,9 +1945,10 @@ typedef struct dhd_pub {
 #ifdef PKT_FILTER_SUPPORT
 	uint8 pfaoe_enab;
 #endif /* PKT_FILTER_SUPPORT */
+#ifdef PROP_TXSTATUS_VSDB
+	int proptx_force;
+#endif /* PROP_TXSTATUS_VSDB */
 
-	char *clm_path;		/* module_param: path to clm vars file */
-	char *conf_path;		/* module_param: path to config vars file */
 	struct dhd_conf *conf;	/* Bus module handle */
 	void *adapter;			/* adapter information, interrupt, fw path etc. */
 	void *event_params;
@@ -2175,7 +2154,6 @@ int dhd_pno_clean(dhd_pub_t *dhd);
  *  Wake locks are an Android power management concept. They are used by applications and services
  *  to request CPU resources.
  */
-#if defined(linux) && defined(OEM_ANDROID)
 extern int dhd_os_wake_lock(dhd_pub_t *pub);
 extern int dhd_os_wake_unlock(dhd_pub_t *pub);
 extern int dhd_os_wake_lock_waive(dhd_pub_t *pub);
@@ -2206,6 +2184,7 @@ extern int dhd_get_1905_almac(dhd_pub_t *dhdp, uint8 ifidx, uint8* ea, bool mcas
 extern int dhd_set_1905_almac(dhd_pub_t *dhdp, uint8 ifidx, uint8* ea, bool mcast);
 #endif /* WLEASYMESH */
 
+#if defined(linux) && defined(OEM_ANDROID)
 inline static void MUTEX_LOCK_SOFTAP_SET_INIT(dhd_pub_t * dhdp)
 {
 #if defined(OEM_ANDROID)
@@ -3060,9 +3039,7 @@ extern void dhd_sendup_log(dhd_pub_t *dhdp, void *data, int len);
 #if defined(SHOW_LOGTRACE) && defined(EWP_EDL)
 void dhd_sendup_info_buf(dhd_pub_t *dhdp, uint8 *msg);
 #endif
-#if defined(WIFI_TURNON_USE_HALINIT)
 extern int dhd_open(struct net_device *net);
-#endif /* WIFI_TURNON_USE_HALINIT */
 #if defined(LINUX) || defined(linux)
 extern int dhd_stop(struct net_device *net);
 #endif /* LINUX */
@@ -3077,11 +3054,9 @@ extern bool dhd_is_associated(dhd_pub_t *dhd, uint8 ifidx, int *retval);
 #if defined(LINUX) || defined(linux)
 extern bool dhd_scan_associated(dhd_pub_t *dhd, struct net_device *dev);
 #endif /* LINUX */
-#if defined(BCMSDIO) || defined(BCMPCIE)
 extern uint dhd_bus_chip_id(dhd_pub_t *dhdp);
 extern uint dhd_bus_chiprev_id(dhd_pub_t *dhdp);
 extern uint dhd_bus_chippkg_id(dhd_pub_t *dhdp);
-#endif /* defined(BCMSDIO) || defined(BCMPCIE) */
 #if defined(LINUX) || defined(linux)
 int dhd_bus_get_fw_mode(dhd_pub_t *dhdp);
 #else
@@ -3225,6 +3200,12 @@ typedef struct dmaxref_mem_map {
 #if defined(OEM_ANDROID)
 extern int wl_iw_iscan_set_scan_broadcast_prep(struct net_device *dev, uint flag);
 extern int wl_iw_send_priv_event(struct net_device *dev, char *flag);
+extern int wl_iw_parse_channel_list_tlv(char** list_str, uint16* channel_list,
+	int channel_num, int *bytes_left);
+extern int wl_iw_parse_ssid_list(char** list_str, wlc_ssid_t* ssid, int idx, int max);
+extern int wl_iw_parse_channel_list(char** list_str, uint16* channel_list, int channel_num);
+extern int wl_iw_parse_data_tlv(char** list_str, void *dst, int dst_size, const char token,
+	int input_size, int *bytes_left);
 #endif /* defined(OEM_ANDROID) */
 
 #ifdef DHD_PCIE_NATIVE_RUNTIMEPM
@@ -3452,12 +3433,18 @@ extern uint dhd_force_tx_queueing;
 
 #if defined(VSDB) || defined(ROAM_ENABLE)
 #define DEFAULT_BCN_TIMEOUT            6
+#define DEFAULT_BCN_TIMEOUT_6G            10
 #else
 #define DEFAULT_BCN_TIMEOUT            4
+#define DEFAULT_BCN_TIMEOUT_6G            10
 #endif
 
 #ifndef CUSTOM_BCN_TIMEOUT
 #define CUSTOM_BCN_TIMEOUT             DEFAULT_BCN_TIMEOUT
+#endif
+
+#ifndef CUSTOM_BCN_TIMEOUT_6G
+#define CUSTOM_BCN_TIMEOUT_6G         DEFAULT_BCN_TIMEOUT_6G
 #endif
 
 #define DEFAULT_BCN_TIMEOUT_IN_SUSPEND	10
@@ -3732,6 +3719,7 @@ extern int
 concate_revision(struct dhd_bus *bus, char *fwpath, char *nvpath);
 #endif /* SUPPORT_MULTIPLE_REVISION */
 void dhd_bus_update_fw_nv_path(struct dhd_bus *bus, char *pfw_path, char *pnv_path);
+int dhd_bus_clm_load_from_fw(struct dhd_bus *bus);
 void dhd_set_bus_state(void *bus, uint32 state);
 
 /* Remove proper pkts(either one no-frag pkt or whole fragmented pkts) */
@@ -3990,6 +3978,162 @@ typedef struct wl_evt_pport {
 	void *raw_event;
 } wl_evt_pport_t;
 
+/* Meta Data Structure */
+#define METADATA_V1	0x1
+#define METADATA_STRUCT_VERSION	METADATA_V1
+
+/* meta data header: magic number 4bytes + version 1byte + length 3bytes */
+#define METADATA_LEN		4 /* magic number */
+#define METADATA_VER_LEN	1 /* version */
+#define METADATA_JUMP_VALUE_LEN	3 /* length */
+#define METADATA_TLV_TYPE_LEN	2
+#define METADATA_TLV_LEN_LEN	2
+#define METADATA_TLV_SUBVER_LEN	1
+#define METADATA_TLV_VER_LEN	2
+#define METADATA_END		0x0
+#define METADATA_TYPE_MAX	0xFF
+#define METADATA_HDR_LEN	(METADATA_LEN + METADATA_VER_LEN + METADATA_JUMP_VALUE_LEN)
+
+#define MAX_CHIPID_LEN		10
+
+#define MAX_CHIP_CONTENT	1
+#define MAX_EXCL_MEM_CONTENT	3
+#define MAX_STARTUPLOC_CONTENT	1
+#define MAX_NVRAM_CONTENT	3
+#define MAX_CERT_CONTENT	2
+#define MAX_FW_DL_CONTENT	3
+#define MAX_FW_DL_SECTION	2
+#define MAX_TAG_INFO_LEN	300
+#define MAX_CERT_LEN		1024
+#define METADATA_TLV_FW_SECTION_NUM_LEN	2
+
+#define SIG_HEADER_LEN		4
+#define SIG_SIZE_LEN		2
+
+typedef struct m_chip_tlv_v1_h
+{
+	bool	present;
+	uint16	type;
+	uint16	len;
+	uint16	ver;
+	char	chip_id[MAX_CHIPID_LEN];
+} m_chip_tlv_v1_t;
+
+typedef struct m_excl_mem_tlv_v1_h
+{
+	bool	present;
+	uint16	type;
+	uint16	len;
+	uint16	ver;
+	uint64	mem_start;
+	uint64	mem_end;
+	uint64	mem_size;
+} m_excl_mem_tlv_v1_t;
+
+typedef struct m_startuploc_tlv_v1_h
+{
+	bool	present;
+	uint16	type;
+	uint16	len;
+	uint16	ver;
+	uint64	addr;
+} m_startuploc_tlv_v1_t;
+
+typedef struct m_nvram_tlv_v1_h
+{
+	bool	present;
+	uint16	type;
+	uint16	len;
+	uint16	ver;
+	uint64	nvram_start;
+	uint64	nvram_end;
+	uint64	nvram_max_size;
+} m_nvram_tlv_v1_t;
+
+typedef struct m_cons_addr_tlv_v1_h
+{
+	uint16	type;
+	uint16	len;
+	uint16	ver;
+	uint64	cons_start;
+} m_cons_addr_tlv_v1_t;
+
+typedef struct m_fw_dl_tlv_v1_h
+{
+	bool	enabled;
+	uint16	type;
+	uint16	len;
+	uint16	ver;
+	uint64	fw_sec_num;
+	uint64	dl_start[MAX_FW_DL_SECTION];
+	uint64	dl_end[MAX_FW_DL_SECTION];
+	uint64	dl_size[MAX_FW_DL_SECTION];
+} m_fw_dl_tlv_v1_t;
+
+typedef struct m_tag_info_v1_h
+{
+	bool present;
+	uint16	type;
+	uint16	len;
+	uint16	ver;
+	uint64	addr;
+} m_tag_info_tlv_v1_t;
+
+typedef struct m_sign_file_tlv_v1_h
+{
+	bool present;
+	uint16	type;
+	uint16	len;
+	uint16	ver;
+	uint64	sign_addr;
+	uint64	sign_size;
+} m_sign_file_tlv_v1_t;
+
+typedef struct m_clm_blob_tlv_v1_h
+{
+	bool present;
+	uint16	type;
+	uint16	len;
+	uint16	ver;
+	uint64	addr;
+} m_clm_blob_tlv_v1_t;
+
+typedef struct metadata_h
+{
+	bool	enabled;
+	uint32	jump_value;
+	uint8	version;
+	m_chip_tlv_v1_t		chip_detail;
+	m_excl_mem_tlv_v1_t	excl_mem;
+	m_startuploc_tlv_v1_t	startup_loc;
+	m_nvram_tlv_v1_t	nvram_loc;
+	m_cons_addr_tlv_v1_t    cons_addr;
+	m_fw_dl_tlv_v1_t        fw_dl_loc;
+	m_tag_info_tlv_v1_t	tag_info;
+	m_clm_blob_tlv_v1_t	clm_blob_loc;
+	m_sign_file_tlv_v1_t	sign_file;
+} metadata_t;
+
+enum metadata_version
+{
+	METADATA_VERSION_1 = 1,
+	METADATA_VERSION_2
+};
+
+enum metadata_type
+{
+	CHIP_DETAILS = 1,
+	EXCL_MEM_LOCATION,
+	STARTUP_LOCATION,
+	NVRAM_LOCATION,
+	CONS_ADDR,
+	FW_DL_LOCATION,
+	TAG_INFO_LOCATION,
+	CLM_BLOB_LOCATION,
+	SIGNATURE_FILE,
+	METADATA_TYPE_LAST = METADATA_TYPE_MAX // Add contents before last
+};
+
 extern void *dhd_pub_shim(dhd_pub_t *dhd_pub);
 #ifdef DHD_FW_COREDUMP
 void* dhd_get_fwdump_buf(dhd_pub_t *dhd_pub, uint32 length);
@@ -4003,8 +4147,8 @@ void custom_xps_map_clear(struct net_device *net);
 
 #if defined(SET_RPS_CPUS)
 int dhd_rps_cpus_enable(struct net_device *net, int enable);
-int custom_rps_map_set(struct netdev_rx_queue *queue, char *buf, size_t len);
-void custom_rps_map_clear(struct netdev_rx_queue *queue);
+int custom_rps_map_set(struct net_device *net, char *buf, size_t len);
+void custom_rps_map_clear(struct net_device *net);
 #define PRIMARY_INF 0
 #define VIRTUAL_INF 1
 #if defined(CONFIG_MACH_UNIVERSAL7420) || defined(CONFIG_SOC_EXYNOS8890)
@@ -4032,7 +4176,7 @@ void dhd_free_download_buffer(dhd_pub_t	*dhd, void *buffer, int length);
 
 int dhd_download_blob(dhd_pub_t *dhd, unsigned char *buf,
 		uint32 len, char *iovar);
-
+ 
 int dhd_download_apf(dhd_pub_t *dhd, unsigned char *buf,
 		uint32 len, char *iovar);
 
@@ -4043,15 +4187,11 @@ int dhd_apply_default_txcap(dhd_pub_t *dhd, char *txcap_path);
 int dhd_apply_default_clm(dhd_pub_t *dhd, char *clm_path);
 
 #ifdef SHOW_LOGTRACE
-int dhd_parse_logstrs_file(osl_t *osh, char *raw_fmts, int logstrs_size,
+void dhd_init_logstrs(dhd_pub_t *dhd);
+int dhd_parse_logstrs_file(dhd_pub_t *dhd, char *raw_fmts, int logstrs_size,
 		dhd_event_log_t *event_log);
-#ifdef DHD_LINUX_STD_FW_API
-int dhd_parse_map_file(osl_t *osh, const void *ptr, uint32 *ramstart,
-		uint32 *rodata_start, uint32 *rodata_end);
-#else
-int dhd_parse_map_file(osl_t *osh, void *file, uint32 *ramstart,
-		uint32 *rodata_start, uint32 *rodata_end);
-#endif /* DHD_LINUX_STD_FW_API */
+int dhd_parse_map_file(dhd_pub_t *dhd, FWPKG_FILE *fw, int unit_type, int map_size,
+		uint32 *ramstart, uint32 *rodata_start, uint32 *rodata_end);
 #ifdef PCIE_FULL_DONGLE
 int dhd_event_logtrace_infobuf_pkt_process(dhd_pub_t *dhdp, void *pktbuf,
 		dhd_event_log_t *event_data);
@@ -4315,10 +4455,59 @@ static INLINE void dhd_pktid_logging_dump(dhd_pub_t *dhdp) { }
 #endif /* LINUX || linux */
 #endif /* DHD_MAP_PKTID_LOGGING */
 
+#ifdef DHD_PCIE_RUNTIMEPM
+#define DEFAULT_DHD_RUNTIME_MS 100
+#ifndef CUSTOM_DHD_RUNTIME_MS
+#define CUSTOM_DHD_RUNTIME_MS DEFAULT_DHD_RUNTIME_MS
+#endif /* CUSTOM_DHD_RUNTIME_MS */
+
+#ifndef MAX_IDLE_COUNT
+#define MAX_IDLE_COUNT 11
+#endif /* MAX_IDLE_COUNT */
+
+extern uint dhd_runtimepm_ms;
+
+extern void dhd_os_runtimepm_timer(void *bus, uint tick);
+extern bool dhd_runtimepm_state(dhd_pub_t *dhd);
+extern bool dhd_runtime_bus_wake(struct dhd_bus *bus, bool wait, void *func_addr);
+extern bool dhdpcie_runtime_bus_wake(dhd_pub_t *dhdp, bool wait, void *func_addr);
+extern void dhdpcie_block_runtime_pm(dhd_pub_t *dhdp);
+extern bool dhdpcie_is_resume_done(dhd_pub_t *dhdp);
+extern void dhd_runtime_pm_disable(dhd_pub_t *dhdp);
+extern void dhd_runtime_pm_enable(dhd_pub_t *dhdp);
+/* Disable the Runtime PM thread and wake up if the bus is already in suspend */
+#define DHD_DISABLE_RUNTIME_PM(dhdp) \
+do { \
+	dhd_runtime_pm_disable(dhdp); \
+} while (0);
+
+/* Enable the Runtime PM thread */
+#define DHD_ENABLE_RUNTIME_PM(dhdp) \
+do { \
+	dhd_runtime_pm_enable(dhdp); \
+} while (0);
+
+/* Stop the timer and disable RPM thread */
+#define DHD_STOP_RPM_TIMER(dhdp) \
+do { \
+	dhd_os_runtimepm_timer(dhdp, 0); \
+	DHD_DISABLE_RUNTIME_PM(dhdp) \
+} while (0);
+
+/* Start the timer and enable RPM thread */
+#define DHD_START_RPM_TIMER(dhdp) \
+do { \
+	if ((dhdp)->conf->rpm) { \
+		dhd_os_runtimepm_timer(dhdp, dhd_runtimepm_ms); \
+		DHD_ENABLE_RUNTIME_PM(dhdp) \
+	} \
+} while (0);
+#else
 #define DHD_DISABLE_RUNTIME_PM(dhdp)
 #define DHD_ENABLE_RUNTIME_PM(dhdp)
 #define DHD_STOP_RPM_TIMER(dhdp)
 #define DHD_START_RPM_TIMER(dhdp)
+#endif /* DHD_PCIE_RUNTIMEPM */
 
 extern bool dhd_prot_is_h2d_ring_empty(dhd_pub_t *dhd, void *prot_info);
 extern void dhd_prot_dump_ring_ptrs(void *prot_info);
@@ -4549,7 +4738,9 @@ void dhd_h2d_log_time_sync(dhd_pub_t *dhdp);
 extern void dhd_cleanup_if(struct net_device *net);
 
 void dhd_schedule_logtrace(void *dhd_info);
-int dhd_print_fw_ver_from_file(dhd_pub_t *dhdp, char *fwpath);
+#ifdef TAG_INFO_FW_VER
+void dhd_print_fw_ver_from_file(dhd_pub_t *dhdp, FWPKG_FILE *fw, fwpkg_info_t *fwpkg, int fw_size);
+#endif /* TAG_INFO_FW_VER */
 
 #if defined(LINUX) || defined(linux)
 /* configuration of ecounters. API's tp start/stop. currently supported only for linux */
@@ -4729,6 +4920,7 @@ static INLINE void dhd_handle_pktdata(dhd_pub_t *dhdp, int ifidx, void *pkt, uin
 	uint32 pktid, uint32 pktlen, uint16 *pktfate, uint8 *dhd_udr, uint8 *dhd_igmp,
 	bool tx, int pkt_wake, bool pkt_log) { return; }
 #endif /* __linux */
+extern int dhd_txpkt_log_and_dump(dhd_pub_t *dhdp, void* pkt, uint16 *pktfate_status);
 
 #if defined(BCMPCIE) && defined(__linux__)
 extern int dhd_check_shinfo_nrfrags(dhd_pub_t *dhdp, void *pktbuf, dmaaddr_t *pa, uint32 pktid);
@@ -4893,6 +5085,20 @@ extern int dhd_register_net(struct net_device *net, bool need_rtnl_lock);
 #if defined(DHD_HWTSTAMP)
 extern int dhd_hwtstamp_txtype(dhd_pub_t *dhdp);
 #endif /* DHD_HWTSTAMP */
+
+extern void dhd_wd_interval_set(dhd_pub_t *dhdp, uint wd_interval);
+extern int pattern_atoh_len(char *src, char *dst, int len);
+extern int wl_pattern_atoh(char *src, char *dst);
+
+extern char* __attribute__ ((weak)) dhd_get_device_dt_name(void);
+extern int dhd_wlan_init(void);
+extern void dhd_wlan_deinit(void);
+
+#ifdef CONFIG_BROADCOM_WIFI_RESERVED_MEM
+extern void dhd_exit_wlan_mem(void);
+extern int dhd_init_wlan_mem(void);
+extern void *dhd_wlan_mem_prealloc(int section, unsigned long size);
+#endif /* CONFIG_BROADCOM_WIFI_RESERVED_MEM */
 
 #ifdef WL_MONITOR
 void dhd_set_monitor(dhd_pub_t *pub, int ifidx, int val);

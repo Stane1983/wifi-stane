@@ -1,7 +1,7 @@
 /*
  * DHD debugability packet logging support
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1229,36 +1229,39 @@ dhd_pktlog_filter_pull_forward(dhd_pktlog_filter_t *filter, uint32 del_filter_id
 void dhd_pktlog_get_filename(dhd_pub_t *dhdp, char *dump_path, int len)
 {
 	/* Init file name */
+	char tmp_path[DHD_PKTLOG_FATE_INFO_STR_LEN];
+	bzero(tmp_path, sizeof(tmp_path));
 	bzero(dump_path, len);
+
 	clear_debug_dump_time(dhdp->debug_dump_time_pktlog_str);
 	get_debug_dump_time(dhdp->debug_dump_time_pktlog_str);
 
 	if (dhdp->memdump_type == DUMP_TYPE_BY_SYSDUMP) {
 		if (dhdp->debug_dump_subcmd == CMD_UNWANTED) {
-			snprintf(dump_path, len, "%s",
+			snprintf(tmp_path, len, "%s",
 					DHD_PKTLOG_DUMP_PATH DHD_PKTLOG_DUMP_TYPE
 					DHD_DUMP_SUBSTR_UNWANTED);
 		} else if (dhdp->debug_dump_subcmd == CMD_DISCONNECTED) {
-			snprintf(dump_path, len, "%s",
+			snprintf(tmp_path, len, "%s",
 					DHD_PKTLOG_DUMP_PATH DHD_PKTLOG_DUMP_TYPE
 					DHD_DUMP_SUBSTR_DISCONNECTED);
 		} else {
-			snprintf(dump_path, len, "%s",
+			snprintf(tmp_path, len, "%s",
 					DHD_PKTLOG_DUMP_PATH DHD_PKTLOG_DUMP_TYPE);
 		}
 	} else {
 		if (dhdp->pktlog_debug) {
-			snprintf(dump_path, len, "%s",
+			snprintf(tmp_path, len, "%s",
 					DHD_PKTLOG_DUMP_PATH DHD_PKTLOG_DEBUG_DUMP_TYPE);
 		} else {
-			snprintf(dump_path, len, "%s",
+			snprintf(tmp_path, len, "%s",
 					DHD_PKTLOG_DUMP_PATH DHD_PKTLOG_DUMP_TYPE);
 		}
 
 	}
 
-	snprintf(dump_path, len, "%s_%s.pcap", dump_path,
-			dhdp->debug_dump_time_pktlog_str);
+	snprintf(dump_path, len, "%s_%s.pcap", tmp_path,
+		dhdp->debug_dump_time_pktlog_str);
 	DHD_ERROR(("%s: pktlog path = %s%s\n", __FUNCTION__, dump_path, FILE_NAME_HAL_TAG));
 	clear_debug_dump_time(dhdp->debug_dump_time_pktlog_str);
 }

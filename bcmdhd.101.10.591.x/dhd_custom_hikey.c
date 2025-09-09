@@ -1,7 +1,7 @@
 /*
  * Platform Dependent file for Hikey
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -60,12 +60,6 @@
 #endif /* CONFIG_WIFI_CONTROL_FUNC */
 #include <dhd_dbg.h>
 #include <dhd.h>
-
-#ifdef CONFIG_BROADCOM_WIFI_RESERVED_MEM
-extern void dhd_exit_wlan_mem(void);
-extern int dhd_init_wlan_mem(void);
-extern void *dhd_wlan_mem_prealloc(int section, unsigned long size);
-#endif /* CONFIG_BROADCOM_WIFI_RESERVED_MEM */
 
 #define HIKEY_PCIE_VENDOR_ID 0x19e5
 #define HIKEY_PCIE_DEVICE_ID 0x3660

@@ -1,7 +1,7 @@
 /*
  * Linux platform device for DHD WLAN adapter
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -120,15 +120,6 @@ static int dhd_wifi_platform_load(void);
 extern void* wl_cfg80211_get_dhdp(struct net_device *dev);
 
 // modify for compatibility
-#if defined(BCMDHD_MODULAR) && defined(BOARD_MODULAR_INIT)
-//extern int dhd_wlan_init(void);
-//extern int dhd_wlan_deinit(void);
-#ifdef WBRC
-extern int wbrc_init(void);
-extern void wbrc_exit(void);
-#endif /* WBRC */
-#endif /* defined(BCMDHD_MODULAR) && defined(BOARD_MODULAR_INIT) */
-
 #ifdef ENABLE_4335BT_WAR
 extern int bcm_bt_lock(int cookie);
 extern void bcm_bt_unlock(int cookie);
@@ -452,7 +443,13 @@ static int wifi_plat_dev_drv_probe(struct platform_device *pdev)
 	return wifi_plat_dev_probe_ret;
 }
 
-static int wifi_plat_dev_drv_remove(struct platform_device *pdev)
+static
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0))
+void
+#else
+int
+#endif /* KERNEL >= 6.11 */
+wifi_plat_dev_drv_remove(struct platform_device *pdev)
 {
 	wifi_adapter_info_t *adapter;
 
@@ -475,7 +472,9 @@ static int wifi_plat_dev_drv_remove(struct platform_device *pdev)
 #ifdef BCMDHD_PLATDEV
 	dhd_wlan_deinit_plat_data(adapter);
 #endif
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 11, 0))
 	return 0;
+#endif /* KERNEL_VERSION < 6.11 */
 }
 
 static int wifi_plat_dev_drv_suspend(struct platform_device *pdev, pm_message_t state)
@@ -651,7 +650,8 @@ static int wifi_ctrlfunc_register_drv(void)
 	return wifi_plat_dev_probe_ret;
 }
 
-void wifi_ctrlfunc_unregister_drv(void)
+static void
+wifi_ctrlfunc_unregister_drv(void)
 {
 	wifi_adapter_info_t *adapter = NULL;
 
@@ -719,7 +719,13 @@ static int bcmdhd_wifi_plat_dev_drv_probe(struct platform_device *pdev)
 	return dhd_wifi_platform_load();
 }
 
-static int bcmdhd_wifi_plat_dev_drv_remove(struct platform_device *pdev)
+static
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0))
+void
+#else
+int
+#endif /* KERNEL >= 6.11 */
+bcmdhd_wifi_plat_dev_drv_remove(struct platform_device *pdev)
 {
 	int i;
 	wifi_adapter_info_t *adapter;
@@ -731,7 +737,9 @@ static int bcmdhd_wifi_plat_dev_drv_remove(struct platform_device *pdev)
 		wifi_platform_set_power(adapter, FALSE, WIFI_TURNOFF_DELAY);
 		wifi_platform_bus_enumerate(adapter, FALSE);
 	}
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 11, 0))
 	return 0;
+#endif /* KERNEL_VERSION < 6.11 */
 }
 
 static struct platform_driver dhd_wifi_platform_dev_driver = {

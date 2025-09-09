@@ -1,7 +1,7 @@
 /*
  * DHD PROP_TXSTATUS Module.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1910,7 +1910,7 @@ _dhd_wlfc_cleanup_txq(dhd_pub_t *dhd, f_processpkt_t fn, void *arg)
 #endif /* !BCMDBUS */
 
 /** called during eg detach */
-void
+static void
 _dhd_wlfc_cleanup(dhd_pub_t *dhd, f_processpkt_t fn, void *arg)
 {
 	int i;
@@ -4136,6 +4136,37 @@ dhd_wlfc_deinit(dhd_pub_t *dhd)
 		dhd->plat_deinit((void *)dhd);
 	return BCME_OK;
 } /* dhd_wlfc_init */
+
+int dhd_wlfc_get_intf_role(dhd_pub_t *dhdp, uint8 ifid, uint8 *role)
+{
+	if (dhdp == NULL) {
+		DHD_ERROR(("Error: %s():%d\n", __FUNCTION__, __LINE__));
+		return BCME_BADARG;
+	}
+
+	if (ifid >= WLFC_MAX_IFNUM)
+		return BCME_BADARG;
+
+	dhd_os_wlfc_block(dhdp);
+
+	if (!dhdp->wlfc_state || (dhdp->proptxstatus_mode == WLFC_FCMODE_NONE)) {
+		dhd_os_wlfc_unblock(dhdp);
+		return WLFC_UNSUPPORTED;
+	}
+
+	{
+		athost_wl_status_info_t* wlfc = (athost_wl_status_info_t*)dhdp->wlfc_state;
+		wlfc_mac_descriptor_t* entry = &(wlfc->destination_entries.interfaces[ifid]);
+
+		*role = entry->iftype;
+		DHD_INFO(("%s: entry %p ifid %d role %d "MACDBG"\n", __func__,
+			entry, ifid, *role, MAC2STRDBG(entry->ea)));
+	}
+
+	dhd_os_wlfc_unblock(dhdp);
+
+	return BCME_OK;
+}
 
 /**
  * Called on an interface event (WLC_E_IF) indicated by firmware

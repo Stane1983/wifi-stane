@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 Vendor Extension Code
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -249,7 +249,10 @@ enum andr_vendor_subcmd {
 	WIFI_SUBCMD_SET_MULTISTA_PRIMARY_CONNECTION,
 	WIFI_SUBCMD_SET_MULTISTA_USE_CASE,
 	WIFI_SUBCMD_SET_DTIM_CONFIG,
+	WIFI_SUBCMD_CHANNEL_POLICY,
+#ifdef SYNA_ANDROID_HAL
 	WIFI_SUBCMD_CONFIG_INDOOR_STATE,
+#endif /* SYNA_ANDROID_HAL */
 	ANDR_TWT_SUBCMD_GET_CAP = ANDROID_NL80211_SUBCMD_TWT_START,
 	ANDR_TWT_SUBCMD_SETUP,
 	ANDR_TWT_SUBCMD_TEARDOWN,
@@ -676,7 +679,7 @@ enum custom_setting_attributes {
 	CUSTOM_SETTING_ATTRIBUTE_MAX
 };
 
-#ifdef WL_CELLULAR_CHAN_AVOID
+//#ifdef WL_CELLULAR_CHAN_AVOID
 enum wifi_cellavoid_attributes {
 	CELLAVOID_ATTRIBUTE_INVALID   = 0,
 	CELLAVOID_ATTRIBUTE_CNT       = 1,
@@ -688,7 +691,7 @@ enum wifi_cellavoid_attributes {
 	/* Add more attributes here */
 	CELLAVOID_ATTRIBUTE_MAX
 };
-#endif /* WL_CELLULAR_CHAN_AVOID */
+//#endif /* WL_CELLULAR_CHAN_AVOID */
 
 #ifdef WL_USABLE_CHAN
 enum wifi_usable_channel_attributes {
@@ -788,7 +791,9 @@ enum andr_wifi_attr {
 	ANDR_WIFI_ATTRIBUTE_THERMAL_COMPLETION_WINDOW,
 	ANDR_WIFI_ATTRIBUTE_VOIP_MODE,
 	ANDR_WIFI_ATTRIBUTE_DTIM_MULTIPLIER,
+#ifdef SYNA_ANDROID_HAL
 	ANDR_WIFI_ATTRIBUTE_INDOOR_STATE,
+#endif /* SYNA_ANDROID_HAL */
 	/* Any new ANDR_WIFI attribute add prior to the ANDR_WIFI_ATTRIBUTE_MAX */
 	ANDR_WIFI_ATTRIBUTE_MAX
 };

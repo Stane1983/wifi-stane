@@ -1,7 +1,7 @@
 /*
  * DHD Linux header file (dhd_linux exports for cfg80211 and other components)
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -562,11 +562,7 @@ struct dhd_rx_tx_work {
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
 #ifdef FILTER_IE
-#ifdef DHD_LINUX_STD_FW_API
 #define FILTER_IE_PATH "filter_ie"
-#else
-#define FILTER_IE_PATH "/vendor/etc/wifi/filter_ie"
-#endif /* DHD_LINUX_STD_FW_API */
 #define FILTER_IE_BUFSZ 1024 /* ioc buffsize for FILTER_IE */
 #define FILE_BLOCK_READ_SIZE 256
 #define WL_FILTER_IE_IOV_HDR_SIZE OFFSETOF(wl_filter_ie_iov_v1_t, tlvs)
@@ -643,15 +639,46 @@ int dhd_get_fw_capabilities(dhd_pub_t * dhd);
 int dhd_dbus_txdata(dhd_pub_t *dhdp, void *pktbuf);
 #endif
 void dhd_event_logtrace_enqueue(dhd_pub_t *dhdp, int ifidx, void *pktbuf);
-#if defined(SUPPORT_MULTIPLE_NVRAM) || defined(SUPPORT_MULTIPLE_CLMBLOB)
 int dhd_get_platform_naming_for_nvram_clmblob_file(download_type_t component, char* file_name);
+#if defined(SUPPORT_MULTIPLE_NVRAM) || defined(SUPPORT_MULTIPLE_CLMBLOB)
 #ifdef USE_CID_CHECK
 void dhd_set_platform_ext_name_for_chip_version(char* chip_version);
 #endif /* USE_CID_CHECK */
 #endif /* SUPPORT_MULTIPLE_NVRAM || SUPPORT_MULTIPLE_CLMBLOB */
 void dhd_netif_rx_ni(struct sk_buff * skb);
-#if defined(DBG_PKT_MON) && !defined(PCIE_FULL_DONGLE)
+#ifdef WL_MONITOR
+extern bool dhd_monitor_enabled(dhd_pub_t *dhd, int ifidx);
+#ifdef BCMPCIE
+extern void dhd_rx_mon_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t* msg, void *pkt, int ifidx);
+#endif /* BCMPCIE */
+#endif /* WL_MONITOR */
+#if defined(DBG_PKT_MON)
+#ifdef PCIE_FULL_DONGLE
+extern void dhd_80211_mon_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t *msg, void *pkt, int ifidx);
+#else
 extern bool dhd_80211_mon_pkt(dhd_pub_t *dhdp, void *pkt, int ifidx);
+#endif /* PCIE_FULL_DONGLE */
 #endif /* DBG_PKT_MON */
-
+extern int dhd_ioctl_entry_local(struct net_device *net, wl_ioctl_t *ioc, int cmd);
+extern int dhd_change_mtu(dhd_pub_t *dhdp, int new_mtu, int ifidx);
+extern void wl_update_roamscan_cache_by_band(struct net_device *dev, int band);
+extern int dhd_dev_init_ioctl(struct net_device *dev);
+extern void dhd_set_packet_filter(dhd_pub_t *dhd);
+#ifdef BCMPCIE
+extern void dhd_dpc_tasklet_kill(dhd_pub_t *dhdp);
+extern void dhd_dpc_enable(dhd_pub_t *dhdp);
+#endif /* BCMPCIE */
+#ifdef DHD_SSSR_DUMP
+int dhdpcie_sssr_dump_get_before_after_len(dhd_pub_t *dhd, uint32 *arr_len);
+#endif /* DHD_SSSR_DUMP */
+#ifdef WBRC
+extern int wbrc_init(void);
+extern void wbrc_exit(void);
+extern int wbrc_wl2bt_reset(void);
+extern int wbrc_wlan_on_ack(void);
+extern int wbrc_wlan_on_started(void);
+#endif /* WBRC */
+#ifdef DHD_COREDUMP
+extern int dhd_collect_coredump(dhd_pub_t *dhdp, dhd_dump_t *dump);
+#endif /* DHD_COREDUMP */
 #endif /* __DHD_LINUX_H__ */

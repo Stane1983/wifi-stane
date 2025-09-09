@@ -2,7 +2,7 @@
  * Misc utility routines for accessing the SOC Interconnects
  * of Broadcom HNBU chips.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -21,7 +21,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -649,10 +649,10 @@ extern int si_pcie_configspace_cache(const si_t *sih);
 extern int si_pcie_configspace_restore(const si_t *sih);
 extern int si_pcie_configspace_get(const si_t *sih, uint8 *buf, uint size);
 
-#ifndef BCMDONGLEHOST
-extern void si_muxenab(si_t *sih, uint32 w);
 extern uint32 si_clear_backplane_to(si_t *sih);
 extern void si_slave_wrapper_add(si_t *sih);
+#ifndef BCMDONGLEHOST
+extern void si_muxenab(si_t *sih, uint32 w);
 
 #ifdef AXI_TIMEOUTS_NIC
 extern uint32 si_clear_backplane_to_fast(void *sih, void *addr);
@@ -786,6 +786,10 @@ extern uint32 si_raw_reg(const si_t *sih, uint32 reg, uint32 val, uint32 wrire_r
 
 #define LHL_REG(si, member, mask, val) \
 		si_corereg(si, si_findcoreidx(si, GCI_CORE_ID, 0), \
+			OFFSETOF(gciregs_t, member), mask, val)
+
+#define LHL_W_REG(si, member, mask, val) \
+		si_corereg_writeonly(si, si_findcoreidx(si, GCI_CORE_ID, 0), \
 			OFFSETOF(gciregs_t, member), mask, val)
 
 #define CHIPC_REG(si, member, mask, val) \

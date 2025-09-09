@@ -4,7 +4,7 @@
  * provide the caller with one common bus interface for all dongle devices. In practice, it is only
  * used for USB interfaces. DBUS is not a protocol, but an abstraction layer.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -23,7 +23,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -2639,6 +2639,11 @@ dbus_zlib_free(void *ptr)
 
 #endif /* #if defined(BCM_DNGL_EMBEDIMAGE) */
 
+void
+dhd_bus_set_signature_path(struct dhd_bus *bus, char *sig_path)
+{
+}
+
 #define DBUS_NRXQ	50
 #define DBUS_NTXQ	100
 
@@ -2886,6 +2891,33 @@ static dbus_callbacks_t dhd_dbus_cbs = {
 	dhd_dbus_pktfree
 };
 
+/* Get Chip ID version */
+uint
+dhd_bus_chip_id(dhd_pub_t *dhdp)
+{
+	dhd_bus_t *bus = dhdp->bus;
+	ASSERT(bus != NULL);
+	return bus->pub.attrib.devid;
+}
+
+/* Get Chip Rev ID version */
+uint
+dhd_bus_chiprev_id(dhd_pub_t *dhdp)
+{
+	dhd_bus_t *bus = dhdp->bus;
+	ASSERT(bus);
+	ASSERT(bus != NULL);
+	return bus->pub.attrib.chiprev;
+}
+
+/* Get Chip Pkg ID version */
+uint
+dhd_bus_chippkg_id(dhd_pub_t *dhdp)
+{
+	return 0;
+
+}
+
 uint
 dhd_bus_chip(struct dhd_bus *bus)
 {
@@ -3132,7 +3164,7 @@ dhd_bus_update_fw_nv_path(struct dhd_bus *bus, char *pfw_path,
 	bus->fw_path = pfw_path;
 	bus->nv_path = pnv_path;
 
-	dhd_conf_set_path_params(bus->dhd, bus->fw_path, bus->nv_path);
+	dhd_conf_set_path_params(bus->dhd);
 
 }
 

@@ -1,7 +1,7 @@
 /*
  * BCMSDH Function Driver for the native SDIO/MMC driver in the Linux Kernel
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -132,8 +132,8 @@ extern PBCMSDH_SDMMC_INSTANCE gInstance;
 #define CUSTOM_SDIO_F2_BLKSIZE		DEFAULT_SDIO_F2_BLKSIZE
 #else
 #define CUSTOM_SDIO_F2_BLKSIZE     DYNAMIC_F2_BLKSIZE_FOR_NONLEGACY
+#endif /* DYNAMIC_F2_BLKSIZE_FOR_NONLEGACY */
 #endif /* CUSTOM_SDIO_F2_BLKSIZE */
-#endif
 
 #define DEFAULT_SDIO_F1_BLKSIZE		64
 #ifndef CUSTOM_SDIO_F1_BLKSIZE
@@ -196,6 +196,326 @@ uint8 sdmmc_get_timing(sdioh_info_t *sd);
 void  sdmmc_set_clock_rate(sdioh_info_t *sd, uint hz);
 uint  sdmmc_get_clock_rate(sdioh_info_t *sd);
 void  sdmmc_set_clock_divisor(sdioh_info_t *sd, uint sd_div);
+
+#define SD_DEFAULT	-1
+#define SD_HSMODE_DISABLE	0
+#define SD_HSMODE_ENABLE	1
+int sd_hsmode = SD_DEFAULT;
+module_param(sd_hsmode, int, 0);
+
+#define SD_UHSIMODE_SDR12	0
+#define SD_UHSIMODE_SDR25	1
+#define SD_UHSIMODE_SDR50	2
+#define SD_UHSIMODE_SDR104	3
+#define SD_UHSIMODE_DDR50	4
+int sd_uhsimode = SD_DEFAULT;
+module_param(sd_uhsimode, int, 0);
+
+#define MAX_DTS_INDEX       (3)
+#define DRVSTRN_MAX_CHAR    ('D')
+#define DRVSTRN_IGNORE_CHAR (' ')
+
+char DTS_vals[MAX_DTS_INDEX + 1] = {
+	0x10, /* SDIO_DTSx_SET_TYPE_A */
+	0x00, /* SDIO_DTSx_SET_TYPE_B */
+	0x20, /* SDIO_DTSx_SET_TYPE_C */
+	0x30, /* SDIO_DTSx_SET_TYPE_D */
+	};
+
+char sd_ds[2] = {DRVSTRN_IGNORE_CHAR};
+module_param_string(sd_ds, sd_ds, 2, 0);
+
+/* sd_timing:
+  * MMC_TIMING_LEGACY	0
+  * MMC_TIMING_MMC_HS	1
+  * MMC_TIMING_SD_HS		2
+  * MMC_TIMING_UHS_SDR12		3
+  * MMC_TIMING_UHS_SDR25		4
+  * MMC_TIMING_UHS_SDR50		5
+  * MMC_TIMING_UHS_SDR104	6
+  * MMC_TIMING_UHS_DDR50		7
+  * MMC_TIMING_MMC_DDR52	8
+  * MMC_TIMING_MMC_HS200		9
+  * MMC_TIMING_MMC_HS400		10
+*/
+int sd_timing = SD_DEFAULT;
+module_param(sd_timing, int, 0);
+
+typedef struct sd_hsmode_entry {
+	u32 devid;
+	int sd_hsmode;
+} sd_hsmode_entry_t;
+
+typedef struct sd_uhsimode_entry {
+	u32 devid;
+	int sd_uhsimode;
+} sd_uhsimode_entry_t;
+
+typedef struct sd_ds_entry {
+	u32 devid;
+	char sd_ds[2];
+} sd_ds_entry_t;
+
+typedef struct sd_timing_uhs_entry {
+	u32 devid;
+	int sd_timing;
+} sd_timing_entry_t;
+
+typedef struct sd_clock_entry {
+	u32 devid;
+	uint sd_clock;
+} sd_clock_entry_t;
+
+static const sd_hsmode_entry_t sd_hsmode_lookup_tbl[] = {
+#ifdef SD_HSMODE_SYN4612
+	{BCM4612_CHIP_ID, SD_HSMODE_SYN4612},
+#endif /* SD_HSMODE_SYN4612 */
+};
+
+static const sd_uhsimode_entry_t sd_uhsimode_lookup_tbl[] = {
+#ifdef SD_UHSIMODE_SYN4612
+	{BCM4612_CHIP_ID, SD_UHSIMODE_SYN4612},
+#endif /* SD_UHSIMODE_SYN4612 */
+};
+
+static const sd_ds_entry_t sd_ds_lookup_tbl[] = {
+#ifdef SD_DS_SYN4612
+	{BCM4612_CHIP_ID, SD_DS_SYN4612},
+#endif /* SD_DS_SYN4612 */
+};
+
+static const sd_timing_entry_t sd_timing_lookup_tbl[] = {
+#ifdef SD_TIMING_SYN4612
+	{BCM4612_CHIP_ID, SD_TIMING_SYN4612},
+#endif /* SD_TIMING_SYN4612 */
+};
+
+static const sd_clock_entry_t sd_clock_lookup_tbl[] = {
+#ifdef SD_CLOCK_SYN4612
+	{BCM4612_CHIP_ID, SD_CLOCK_SYN4612},
+#endif /* SD_CLOCK_SYN4612 */
+};
+
+static int
+sdioh_hsmode_lookup(uint32 devid)
+{
+	uint i;
+
+	for (i = 0; i < ARRAYSIZE(sd_hsmode_lookup_tbl); i++) {
+		if (devid == sd_hsmode_lookup_tbl[i].devid)
+			return sd_hsmode_lookup_tbl[i].sd_hsmode;
+	}
+	return sd_hsmode;
+}
+
+static int
+sdioh_uhsimode_lookup(uint32 devid)
+{
+	uint i;
+
+	for (i = 0; i < ARRAYSIZE(sd_uhsimode_lookup_tbl); i++) {
+		if (devid == sd_uhsimode_lookup_tbl[i].devid)
+			return sd_uhsimode_lookup_tbl[i].sd_uhsimode;
+	}
+	return sd_uhsimode;
+}
+
+static char
+sdioh_ds_lookup(uint32 devid)
+{
+	char ds = sd_ds[0];
+	uint i;
+
+	for (i = 0; i < ARRAYSIZE(sd_ds_lookup_tbl); i++) {
+		if (devid == sd_ds_lookup_tbl[i].devid) {
+			return sd_ds_lookup_tbl[i].sd_ds[0];
+		}
+	}
+	return ds;
+}
+
+static int
+sdioh_timing_lookup(uint32 devid)
+{
+	uint i;
+
+	for (i = 0; i < ARRAYSIZE(sd_timing_lookup_tbl); i++) {
+		if (devid == sd_timing_lookup_tbl[i].devid)
+			return sd_timing_lookup_tbl[i].sd_timing;
+	}
+	return sd_timing;
+}
+
+static uint
+sdioh_clock_lookup(uint32 devid)
+{
+	uint i;
+
+	for (i = 0; i < ARRAYSIZE(sd_clock_lookup_tbl); i++) {
+		if (devid == sd_clock_lookup_tbl[i].devid)
+			return sd_clock_lookup_tbl[i].sd_clock;
+	}
+	return sd_clock;
+}
+
+static char
+sdioh_sdmode_to_ds(int hsmode, int uhsimode)
+{
+	char ds = sd_ds[0];
+
+	if (uhsimode >= SD_UHSIMODE_SDR12) {
+		switch (uhsimode) {
+		case SD_UHSIMODE_SDR12:
+		case SD_UHSIMODE_SDR25:
+		case SD_UHSIMODE_SDR50:
+		case SD_UHSIMODE_SDR104:
+		case SD_UHSIMODE_DDR50:
+			ds = 'B';
+			break;
+		default:
+			break;
+		}
+	}
+
+	return ds;
+}
+
+static u32
+sdioh_sdmode_to_timing(int hsmode, int uhsimode)
+{
+	int timing = sd_timing;
+
+	if (uhsimode >= SD_UHSIMODE_SDR12) {
+		switch (uhsimode) {
+		case SD_UHSIMODE_SDR12:
+			timing = MMC_TIMING_UHS_SDR12;
+			break;
+		case SD_UHSIMODE_SDR25:
+			timing = MMC_TIMING_UHS_SDR25;
+			break;
+		case SD_UHSIMODE_SDR50:
+			timing = MMC_TIMING_UHS_SDR50;
+			break;
+		case SD_UHSIMODE_SDR104:
+			timing = MMC_TIMING_UHS_SDR104;
+			break;
+		case SD_UHSIMODE_DDR50:
+			timing = MMC_TIMING_UHS_DDR50;
+			break;
+		default:
+			break;
+		}
+	}
+	else {
+		switch (hsmode) {
+		case SD_HSMODE_DISABLE:
+			timing = MMC_TIMING_LEGACY;
+			break;
+		case SD_HSMODE_ENABLE:
+			timing = MMC_TIMING_SD_HS;
+			break;
+		default:
+			break;
+		}
+	}
+
+	return timing;
+}
+
+static u32
+sdioh_sdmode_to_clock(int hsmode, int uhsimode)
+{
+	uint clock = sd_clock;
+
+	if (uhsimode >= SD_UHSIMODE_SDR12) {
+		switch (uhsimode) {
+		case SD_UHSIMODE_SDR12:
+			clock = UHS_SDR12_MAX_DTR;
+			break;
+		case SD_UHSIMODE_SDR25:
+			clock = UHS_SDR25_MAX_DTR;
+			break;
+		case SD_UHSIMODE_SDR50:
+			clock = UHS_SDR50_MAX_DTR;
+			break;
+		case SD_UHSIMODE_SDR104:
+			clock = UHS_SDR104_MAX_DTR;
+			break;
+		case SD_UHSIMODE_DDR50:
+			clock = UHS_DDR50_MAX_DTR;
+			break;
+		default:
+			break;
+		}
+	}
+	else {
+		switch (hsmode) {
+		case SD_HSMODE_DISABLE:
+			clock = UHS_SDR12_MAX_DTR;
+			break;
+		case SD_HSMODE_ENABLE:
+			clock = HIGH_SPEED_MAX_DTR;
+			break;
+		default:
+			break;
+		}
+	}
+
+	return clock;
+}
+
+int
+sdioh_set_driver_strength(struct sdio_func *func, uint8 level);
+
+void
+sdioh_set_sdio_params(sdioh_info_t *sd)
+{
+	printf("%s: sd_hsmode=%d, sd_uhsimode=%d, sd_ds=%s, sd_timing=%d, sd_clock=%d\n",
+		__FUNCTION__, sd_hsmode, sd_uhsimode, sd_ds, sd_timing, sd_clock);
+
+	if (*sd_ds != DRVSTRN_IGNORE_CHAR) {
+		int ds_offset = (int)DRVSTRN_MAX_CHAR - (int)(*sd_ds);
+		if ((ds_offset >= 0) && (ds_offset <= MAX_DTS_INDEX)) {
+			ds_offset = MAX_DTS_INDEX - ds_offset;
+			sdioh_set_driver_strength(sd->func[0], (DTS_vals[ds_offset]));
+		}
+	}
+
+	if (sd_timing >= 0)
+		sdmmc_set_timing(sd, sd_timing);
+
+	if (sd_clock > 1) {
+		sd->func[0]->card->cis.max_dtr = sd_clock;
+		sdmmc_set_clock_rate(sd, sd_clock);
+	}
+	sd->sd_clk_rate = sdmmc_get_clock_rate(sd);
+	printf("%s: sd_clk_rate = %u\n", __FUNCTION__, sd->sd_clk_rate);
+}
+
+void
+sdioh_init_sdio_params(sdioh_info_t *sd, struct sdio_func *func)
+{
+	if (sd_hsmode == SD_DEFAULT)
+		sd_hsmode = sdioh_hsmode_lookup(func->device);
+
+	if (sd_uhsimode == SD_DEFAULT)
+		sd_uhsimode = sdioh_uhsimode_lookup(func->device);
+
+	if (*sd_ds == DRVSTRN_IGNORE_CHAR) {
+		sd_ds[0] = sdioh_sdmode_to_ds(sd_hsmode, sd_uhsimode);
+		sd_ds[0] = sdioh_ds_lookup(func->device);
+	}
+
+	if (sd_timing == SD_DEFAULT) {
+		sd_timing = sdioh_sdmode_to_timing(sd_hsmode, sd_uhsimode);
+		sd_timing = sdioh_timing_lookup(func->device);
+	}
+
+	if (sd_clock == 1) {
+		sd_clock = sdioh_sdmode_to_clock(sd_hsmode, sd_uhsimode);
+		sd_clock = sdioh_clock_lookup(func->device);
+	}
+}
 
 static int
 sdioh_sdmmc_card_enablefuncs(sdioh_info_t *sd)
@@ -265,6 +585,7 @@ sdioh_set_driver_strength(struct sdio_func *func, uint8 level)
 	} else {
 		sd_info(("SYNA: sd_ds set cccr driver strength 0x%x\n", reg));
 	}
+	DHD_ERROR(("%s: After change: sd driver strength is 0x%x\n", __FUNCTION__, level));
 done:
 	sdio_release_host(func);
 	return err;
@@ -303,10 +624,8 @@ sdioh_attach(osl_t *osh, struct sdio_func *func)
 	sd->fake_func0.num = 0;
 	sd->fake_func0.card = func->card;
 	sd->func[0] = &sd->fake_func0;
-	if (sd_clock > 1) {
-		sd->func[0]->card->cis.max_dtr = sd_clock;
-		sdmmc_set_clock_rate(sd, sd_clock);
-	}
+	sdioh_init_sdio_params(sd, func);
+	sdioh_set_sdio_params(sd);
 #ifdef GLOBAL_SDMMC_INSTANCE
 	if (func->num == 2)
 		sd->func[1] = gInstance->func[1];
@@ -353,8 +672,6 @@ sdioh_attach(osl_t *osh, struct sdio_func *func)
 		goto fail;
 	}
 
-	sd->sd_clk_rate = sdmmc_get_clock_rate(sd);
-	printf("%s: sd clock rate = %u\n", __FUNCTION__, sd->sd_clk_rate);
 	sdioh_sdmmc_card_enablefuncs(sd);
 #if !defined(OOB_INTR_ONLY)
 	mutex_init(&sd->claim_host_mutex); // terence 20140926: fix for claim host issue
@@ -890,7 +1207,8 @@ sdioh_enable_hw_oob_intr(sdioh_info_t *sd, bool enable)
 
 	if (enable) {
 #ifdef CUSTOMER_HW_AMLOGIC
-		if (wifi_irq_trigger_level() == GPIO_IRQ_LOW)
+		if (wifi_irq_trigger_level() == GPIO_IRQ_LOW \
+                    || wifi_irq_trigger_level() == IRQF_TRIGGER_LOW)
 			data = SDIO_SEPINT_MASK | SDIO_SEPINT_OE;
 		else
 #endif
@@ -1850,13 +2168,11 @@ LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 32) && LINUX_VERSION_CODE < KERNEL_VE
 	printf("%s: call sdio_reset_comm\n", __FUNCTION__);
 	err = sdio_reset_comm(card);
 #endif
-	if (sd_clock > 1) {
-		card->cis.max_dtr = sd_clock;
-		sdmmc_set_clock_rate(sd, sd_clock);
-	}
 
 	if (err)
 		sd_err(("%s Failed, error = %d\n", __FUNCTION__, err));
+	else
+		sdioh_set_sdio_params(sd);
 
 	return err;
 }

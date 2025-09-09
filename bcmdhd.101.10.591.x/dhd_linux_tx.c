@@ -2,7 +2,7 @@
  * Broadcom Dongle Host Driver (DHD),
  * Linux-specific network interface for transmit(tx) path
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -21,7 +21,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -86,7 +86,7 @@
 #include <linux/unaligned.h>
 #else
 #include <asm/unaligned.h>
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0) */
+#endif /* KERNEL >= 6.12 */
 #include <dhd_linux_priv.h>
 
 #include <epivers.h>
@@ -105,6 +105,7 @@
 #include <dhd_linux_wq.h>
 #include <dhd.h>
 #include <dhd_linux.h>
+#include <dhd_linux_tx.h>
 #include <dhd_linux_pktdump.h>
 #ifdef DHD_WET
 #include <dhd_wet.h>
@@ -481,12 +482,20 @@ BCMFASTPATH(__dhd_sendpkt)(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
 #ifdef PROP_TXSTATUS
 		/* tx_packets counter can counted only when wlfc is disabled */
 		if (!dhd_wlfc_is_supported(dhdp))
-#endif
+#endif /* PROP_TXSTATUS */
 		{
 			dhdp->tx_packets++;
 			dhdp->tx_bytes += datalen;
 			ifp->stats.tx_packets++;
 			ifp->stats.tx_bytes += datalen;
+#ifdef CUSTOMER_HW4
+#ifdef PROP_TXSTATUS
+			if (pktbuf) {
+				/* If disabled, packet logging also needs to happen here */
+				dhd_txpkt_log_and_dump(&dhd->pub, pktbuf, NULL);
+			}
+#endif /* PROP_TXSTATUS */
+#endif /* CUSTOMER_HW4 */
 		}
 		dhdp->actual_tx_pkts++;
 	}
@@ -521,6 +530,15 @@ BCMFASTPATH(dhd_sendpkt)(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
 	DHD_BUS_BUSY_SET_IN_SEND_PKT(dhdp);
 	DHD_GENERAL_UNLOCK(dhdp, flags);
 
+#ifdef DHD_PCIE_RUNTIMEPM
+	if (dhdpcie_runtime_bus_wake(dhdp, FALSE, __builtin_return_address(0))) {
+		DHD_ERROR(("%s : pcie is still in suspend state!!\n", __FUNCTION__));
+		PKTCFREE(dhdp->osh, pktbuf, TRUE);
+		ret = -EBUSY;
+		goto exit;
+	}
+#endif /* DHD_PCIE_RUNTIMEPM */
+
 	DHD_GENERAL_LOCK(dhdp, flags);
 	if (DHD_BUS_CHECK_SUSPEND_OR_SUSPEND_IN_PROGRESS(dhdp)) {
 		DHD_ERROR(("%s: bus is in suspend(%d) or suspending(0x%x) state!!\n",
@@ -536,6 +554,10 @@ BCMFASTPATH(dhd_sendpkt)(dhd_pub_t *dhdp, int ifidx, void *pktbuf)
 	DHD_GENERAL_UNLOCK(dhdp, flags);
 
 	ret = __dhd_sendpkt(dhdp, ifidx, pktbuf);
+
+#ifdef DHD_PCIE_RUNTIMEPM
+exit:
+#endif
 
 	DHD_GENERAL_LOCK(dhdp, flags);
 	DHD_BUS_BUSY_CLEAR_IN_SEND_PKT(dhdp);
@@ -639,6 +661,21 @@ BCMFASTPATH(dhd_start_xmit)(struct sk_buff *skb, struct net_device *net)
 	DHD_GENERAL_LOCK(&dhd->pub, flags);
 	DHD_BUS_BUSY_SET_IN_TX(&dhd->pub);
 	DHD_GENERAL_UNLOCK(&dhd->pub, flags);
+
+#ifdef DHD_PCIE_RUNTIMEPM
+	if (dhdpcie_runtime_bus_wake(&dhd->pub, FALSE, dhd_start_xmit)) {
+		/* In order to avoid pkt loss. Return NETDEV_TX_BUSY until run-time resumed. */
+		/* stop the network queue temporarily until resume done */
+		DHD_GENERAL_LOCK(&dhd->pub, flags);
+		if (!dhdpcie_is_resume_done(&dhd->pub)) {
+			dhd_bus_stop_queue(dhd->pub.bus);
+		}
+		DHD_BUS_BUSY_CLEAR_IN_TX(&dhd->pub);
+		dhd_os_busbusy_wake(&dhd->pub);
+		DHD_GENERAL_UNLOCK(&dhd->pub, flags);
+		return NETDEV_TX_BUSY;
+	}
+#endif /* DHD_PCIE_RUNTIMEPM */
 
 	DHD_GENERAL_LOCK(&dhd->pub, flags);
 #ifdef BCMPCIE

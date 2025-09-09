@@ -1,7 +1,7 @@
 /*
  * DHD Bus Module for SDIO
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -96,6 +96,7 @@
 #endif
 #include <linux/mmc/sdio_func.h>
 #include <dhd_linux.h>
+#include <dhd_linux_priv.h>
 
 #ifdef PROP_TXSTATUS
 #include <dhd_wlfc.h>
@@ -510,6 +511,7 @@ typedef struct dhd_bus {
 	uint32		bt_use_count; /* Counter that tracks whether BT is using the bus */
 #endif /* defined (BT_OVER_SDIO) */
 	uint64		last_suspend_end_time;
+	bool		force_poll;			/* Force to enable polling */
 
 	/* Information used to compose the memory map and to write the memory map,
 	 * FW, and FW signature to dongle RAM.
@@ -526,9 +528,17 @@ typedef struct dhd_bus {
 	uint32 fw_memmap_download_len;  /* Length in bytes of FWS memory-info download */
 
 	char fwsig_filename[DHD_MAX_PATH];              /* Name of FW signature file */
+	bool sig_loaded;
 	char bootloader_filename[DHD_FILENAME_MAX];     /* Name of bootloader image file */
 	uint32 bootloader_addr;         /* Dongle address of bootloader download */
-	fwpkg_info_t fwpkg;     /* combined fw package info structure */
+	uint32		clm_addr;	/* module_param: dst_addr to clm blob file */
+#ifdef BL_CONS_LOG
+	uint32 bl_cons_addr_reg;
+	uint64 arm_oor_time;
+	uint64 rd_shared_pass_time;
+	uint64 rd_sboot_stats_time;
+	uint64 rd_first_msg_time;
+#endif /* BL_CONS_LOG */
 	uint		txglomframes;	/* Number of tx glom frames (superframes) */
 	uint		txglompkts;		/* Number of packets from tx glom frames */
 #ifdef PKT_STATICS
@@ -615,12 +625,20 @@ uint dhd_dpcpoll = FALSE;
 /* SR memory size */
 uint dhd_srmem = 0;
 
+#ifdef SYN4612_PATCH
+uint dhd_gci_chipctrl_reg4 = 0xaac0411b;
+module_param(dhd_gci_chipctrl_reg4, uint, 0644);
+#endif /* SYN4612_PATCH */
+
 #ifdef linux
 module_param(dhd_doflow, uint, 0644);
 module_param(dhd_dpcpoll, uint, 0644);
 module_param(dhd_srmem, uint, 0644);
 #endif
 
+#if defined(DHD_DEBUG) || defined(DHD_FW_LOG_SUPPORT)
+extern uint32 dngl_console_addr;
+#endif /* defined(DHD_DEBUG) || defined(DHD_FW_LOG_SUPPORT) */
 static bool dhd_alignctl;
 
 static bool sd1idle;
@@ -888,6 +906,10 @@ static int dhdsdio_download_btfw(struct dhd_bus *bus, osl_t *osh, void *sdh);
 static int _dhdsdio_download_btfw(struct dhd_bus *bus);
 #endif /* defined (BT_OVER_SDIO) */
 
+#ifdef DHD_METADATA_DOWNLOAD
+metadata_t metadata = {0};
+int tag_info_len = 0;
+#endif /* DHD_METADATA_DOWNLOAD */
 /*
  * PR 114233: [4335] Sdio 3.0 overflow due to spur mode PLL change
  */
@@ -1054,7 +1076,8 @@ dhdsdio_sr_cap(dhd_bus_t *bus)
 		(bus->sih->chip == BCM43751_CHIP_ID) ||
 		(bus->sih->chip == BCM43752_CHIP_ID) ||
 		(bus->sih->chip == BCM43756_CHIP_ID) ||
-		(bus->sih->chip == BCM43711_CHIP_ID)) {
+		(bus->sih->chip == BCM43711_CHIP_ID) ||
+		(bus->sih->chip == BCM4612_CHIP_ID)) {
 		core_capext = TRUE;
 	} else {
 		/* XXX: For AOB, CORE_CAPEXT_ADDR is moved to PMU core */
@@ -1155,7 +1178,8 @@ dhdsdio_sr_init(dhd_bus_t *bus)
 		CHIPID(bus->sih->chip) == BCM43751_CHIP_ID ||
 		CHIPID(bus->sih->chip) == BCM43752_CHIP_ID ||
 		CHIPID(bus->sih->chip) == BCM43756_CHIP_ID ||
-		CHIPID(bus->sih->chip) == BCM43711_CHIP_ID)
+		CHIPID(bus->sih->chip) == BCM43711_CHIP_ID ||
+		CHIPID(bus->sih->chip) == BCM4612_CHIP_ID)
 			dhdsdio_devcap_set(bus, SDIOD_CCCR_BRCM_CARDCAP_CMD_NODEC);
 
 	if (bus->sih->chip == BCM43012_CHIP_ID ||
@@ -1237,27 +1261,60 @@ dhdsdio_set_wakeupctrl(dhd_bus_t *bus)
 #define CUSTOM_MAX_KSO_ATTEMPTS DEFAULT_MAX_KSO_ATTEMPTS
 #endif
 
+/* 'Absolute' timeout for kso enable, in ms */
+#define KSO_ENAB_TIMEOUT (3000)
+
+#ifdef SDIO_RETUNE_DISABLE_IN_KSO
+#if defined(MMC_RETUNE_DISABLE_IN_KSO) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0))
+#include <linux/mmc/host.h>
+#endif /* MMC_RETUNE_DISABLE_IN_KSO && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0) */
+static void
+dhdsdio_retune_disable(dhd_bus_t *bus, bool kso_on, bool retune_disable)
+{
+	wifi_adapter_info_t *adapter = NULL;
+	uint32 bus_type = -1, bus_num = -1, slot_num = -1;
+
+	dhd_bus_get_ids(bus, &bus_type, &bus_num, &slot_num);
+	adapter = dhd_wifi_platform_get_adapter(bus_type, bus_num, slot_num);
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 15))
+	if (retune_disable) {
+		sdio_retune_crc_disable(adapter->sdio_func);
+		if (kso_on)
+			sdio_retune_hold_now(adapter->sdio_func);
+	} else {
+		if (kso_on)
+			sdio_retune_release(adapter->sdio_func);
+		sdio_retune_crc_enable(adapter->sdio_func);
+	}
+#elif defined(MMC_RETUNE_DISABLE_IN_KSO) && (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0))
+	struct mmc_host *host = adapter->sdio_func->card->host;
+	if (retune_disable) {
+		mmc_retune_disable(host);
+	} else {
+		mmc_retune_enable(host);
+	}
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 15) */
+}
+#endif /* SDIO_RETUNE_DISABLE_IN_KSO */
+
 static int
 dhdsdio_clk_kso_enab(dhd_bus_t *bus, bool on)
 {
 	uint8 wr_val = 0, rd_val, cmp_val, bmask;
 	int err = 0;
+	bool timedout = FALSE;
+#if defined(CUSTOMER_HW4)
+	uint deadline = jiffies + msecs_to_jiffies(KSO_ENAB_TIMEOUT);
+#endif /* CUSTOMER_HW4 */
 	int try_cnt = 0, try_max = CUSTOM_MAX_KSO_ATTEMPTS;
 	struct dhd_conf *conf = bus->dhd->conf;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)) && !defined(ANDROID13_KERNEL515_BKPORT)
-	wifi_adapter_info_t *adapter = NULL;
-	uint32 bus_type = -1, bus_num = -1, slot_num = -1;
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0) */
 
 	KSO_DBG(("%s> op:%s\n", __FUNCTION__, (on ? "KSO_SET" : "KSO_CLR")));
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)) && !defined(ANDROID13_KERNEL515_BKPORT)
-	dhd_bus_get_ids(bus, &bus_type, &bus_num, &slot_num);
-	adapter = dhd_wifi_platform_get_adapter(bus_type, bus_num, slot_num);
-	sdio_retune_crc_disable(adapter->sdio_func);
-	if (on)
-		sdio_retune_hold_now(adapter->sdio_func);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0) */
+#ifdef SDIO_RETUNE_DISABLE_IN_KSO
+	dhdsdio_retune_disable(bus, on, TRUE);
+#endif /* SDIO_RETUNE_DISABLE_IN_KSO */
 
 	wr_val |= (on << SBSDIO_FUNC1_SLEEPCSR_KSO_SHIFT);
 
@@ -1336,8 +1393,17 @@ dhdsdio_clk_kso_enab(dhd_bus_t *bus, bool on)
 		} else
 			OSL_DELAY(KSO_WAIT_US);
 
+#if defined(CUSTOMER_HW4)
+		timedout = (jiffies > deadline);
+#endif /* CUSTOMER_HW4 */
+
 		bcmsdh_cfg_write(bus->sdh, SDIO_FUNC_1, SBSDIO_FUNC1_SLEEPCSR, wr_val, &err);
-	} while (try_cnt++ < try_max);
+	} while ((try_cnt++ < try_max) && !timedout);
+
+	/* This must be the last command on SDIO for INBAND_WAKE_VIA_LHL feature */
+	if (BCM4612_CHIP(bus->sih->chip) && !on) {
+		LHL_W_REG(bus->sih, gpio_int_st_port_adr[0], ~0, ~0);
+	}
 
 #ifdef KSO_DEBUG
 	if (try_cnt > 0 && try_cnt <= 10)
@@ -1365,9 +1431,10 @@ dhdsdio_clk_kso_enab(dhd_bus_t *bus, bool on)
 		KSO_DBG(("%s> op:%s, try_cnt:%d, rd_val:%x, ERR:%x \n",
 			__FUNCTION__, (on ? "KSO_SET" : "KSO_CLR"), try_cnt, rd_val, err));
 
-	if (try_cnt > try_max)  {
-		DHD_ERROR(("%s> op:%s, ERROR: try_cnt:%d, rd_val:%x, ERR:%x \n",
-			__FUNCTION__, (on ? "KSO_SET" : "KSO_CLR"), try_cnt, rd_val, err));
+	if ((try_cnt > try_max) || timedout)  {
+		DHD_ERROR(("%s> op:%s, ERROR: try_cnt:%d, tout:%d rd_val:%x, ERR:%x \n",
+			__FUNCTION__, (on ? "KSO_SET" : "KSO_CLR"), try_cnt,
+			timedout, rd_val, err));
 #ifdef KSO_DEBUG
 		{
 			int i;
@@ -1382,11 +1449,9 @@ dhdsdio_clk_kso_enab(dhd_bus_t *bus, bool on)
 #endif /* !defined(NDIS) */
 
 exit:
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)) && !defined(ANDROID13_KERNEL515_BKPORT)
-	if (on)
-		sdio_retune_release(adapter->sdio_func);
-	sdio_retune_crc_enable(adapter->sdio_func);
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0) */
+#ifdef SDIO_RETUNE_DISABLE_IN_KSO
+	dhdsdio_retune_disable(bus, on, FALSE);
+#endif /* SDIO_RETUNE_DISABLE_IN_KSO */
 
 	return err;
 }
@@ -1440,7 +1505,7 @@ dhdsdio_sleepcsr_get(dhd_bus_t *bus)
 	return val;
 }
 
-uint8
+static uint8
 dhdsdio_devcap_get(dhd_bus_t *bus)
 {
 	return bcmsdh_cfg_read(bus->sdh, SDIO_FUNC_0, SDIOD_CCCR_BRCM_CARDCAP, NULL);
@@ -1641,6 +1706,35 @@ dhdsdio_clk_devsleep_iovar(dhd_bus_t *bus, bool on)
 
 	return err;
 }
+
+#ifdef SYN4612_FHT_PATCH
+static int
+dhdsdio_force_htclk(dhd_bus_t *bus, bool set, uint8 *fht_enable)
+{
+	int err = 0;
+	bool is_set;
+	uint8 clkreq;
+	bcmsdh_info_t *sdh = bus->sdh;
+
+	uint8 clkctl = bcmsdh_cfg_read(sdh, SDIO_FUNC_1, SBSDIO_FUNC1_CHIPCLKCSR, &err);
+	if (err)
+		goto exit;
+
+	is_set = clkctl & SBSDIO_FORCE_HT;
+	*fht_enable = is_set;
+
+	if (set != is_set) {
+		clkreq = set ? (clkctl | SBSDIO_FORCE_HT) : (clkctl & ~SBSDIO_FORCE_HT);
+		bcmsdh_cfg_write(sdh, SDIO_FUNC_1, SBSDIO_FUNC1_CHIPCLKCSR, clkreq, &err);
+	}
+
+exit:
+	if (err)
+		DHD_ERROR(("%s: Failed to %s FHT clock request (err=%d)\n",
+			__FUNCTION__, set ? "set" : "clear", err));
+	return err;
+}
+#endif /* SYN4612_FHT_PATCH */
 
 /* Turn backplane clock on or off */
 static int
@@ -2873,7 +2967,7 @@ done:
 	return ret;
 }
 
-static uint
+static int
 dhdsdio_sendfromq(dhd_bus_t *bus, uint maxframes)
 {
 	uint cnt = 0;
@@ -2896,7 +2990,11 @@ dhdsdio_sendfromq(dhd_bus_t *bus, uint maxframes)
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 
 	if (!KSO_ENAB(bus)) {
+#ifdef CUSTOMER_HW4
+		DHD_INFO(("%s: Device asleep\n", __FUNCTION__));
+#else
 		DHD_ERROR(("%s: Device asleep\n", __FUNCTION__));
+#endif /* CUSTOMER_HW4 */
 		return BCME_NODEVICE;
 	}
 
@@ -3163,7 +3261,7 @@ dhd_bus_txctl(struct dhd_bus *bus, uchar *msg, uint msglen)
 
 	if (!TXCTLOK(bus))
 	{
-		DHD_INFO(("%s: No bus credit bus->tx_max %d, bus->tx_seq %d\n",
+		DHD_CTL(("%s: No bus credit bus->tx_max %d, bus->tx_seq %d\n",
 			__FUNCTION__, bus->tx_max, bus->tx_seq));
 		bus->ctrl_frame_stat = TRUE;
 		/* Send from dpc */
@@ -3185,7 +3283,7 @@ dhd_bus_txctl(struct dhd_bus *bus, uchar *msg, uint msglen)
 #endif /* NDIS */
 
 		if (bus->ctrl_frame_stat == FALSE) {
-			DHD_INFO(("%s: ctrl_frame_stat == FALSE\n", __FUNCTION__));
+			DHD_CTL(("%s: ctrl_frame_stat == FALSE\n", __FUNCTION__));
 			ret = 0;
 		} else {
 			bus->dhd->txcnt_timeout++;
@@ -3274,6 +3372,9 @@ dhd_bus_rxctl(struct dhd_bus *bus, uchar *msg, uint msglen)
 {
 	int timeleft;
 	uint rxlen = 0;
+#ifdef DHD_FW_COREDUMP
+	bool memdump = 0;
+#endif /* DHD_FW_COREDUMP */
 	static uint cnt = 0;
 	uint max_rxcnt;
 
@@ -3351,8 +3452,10 @@ dhd_bus_rxctl(struct dhd_bus *bus, uchar *msg, uint msglen)
 		}
 #ifdef DHD_FW_COREDUMP
 		/* Dump the ram image */
-		if (bus->dhd->memdump_enabled && !bus->dhd->dongle_trap_occured)
+		if (bus->dhd->memdump_enabled && !bus->dhd->dongle_trap_occured) {
+			memdump = 1;
 			dhdsdio_mem_dump(bus);
+		}
 #endif /* DHD_FW_COREDUMP */
 	}
 	if (timeleft == 0) {
@@ -3362,7 +3465,7 @@ dhd_bus_rxctl(struct dhd_bus *bus, uchar *msg, uint msglen)
 			bus->dhd->rxcnt_timeout, rxlen));
 #ifdef DHD_FW_COREDUMP
 		/* collect socram dump */
-		if (bus->dhd->memdump_enabled) {
+		if (bus->dhd->memdump_enabled && !bus->dhd->dongle_trap_occured && !memdump) {
 			bus->dhd->memdump_type = DUMP_TYPE_RESUMED_ON_TIMEOUT_RX;
 			dhd_bus_mem_dump(bus->dhd);
 		}
@@ -3998,7 +4101,10 @@ dhdsdio_readshared(dhd_bus_t *bus, sdpcm_shared_t *sh)
 	}
 
 #if defined(FW_SIGNATURE)
-	if ((bus->fwsig_filename[0] != 0)) {
+#ifdef SYNA_FW_SIGNATURE
+	if (!dhd_conf_syna_secure_chip(bus->dhd)) {
+#endif /* SYNA_FW_SIGNATURE */
+	if ((bus->fwsig_filename[0] != 0) && bus->sig_loaded) {
 		bl_verif_status_t status;
 
 		(void)dhdsdio_read_fwstatus(bus, &status);
@@ -4025,9 +4131,132 @@ dhdsdio_readshared(dhd_bus_t *bus, sdpcm_shared_t *sh)
 			status.max_alloc_size,
 			status.alloc_failures));
 	}
+#ifdef SYNA_FW_SIGNATURE
+	}
+#endif /* SYNA_FW_SIGNATURE */
 #endif /* FW_SIGNATURE */
 	return BCME_OK;
 }
+
+#if defined(BL_CONS_LOG)
+#define MAX_READ_TIMEOUT        2 * 1000 * 1000
+
+static void
+bl_console_register(struct dhd_bus *bus)
+{
+	switch ((uint16)bus->sih->chip) {
+	case BCM43711_CHIP_ID:
+		bus->bl_cons_addr_reg = BL_CONS_ADDR_REG_43711;
+		break;
+	default:
+		bus->bl_cons_addr_reg = BL_CONS_ADDR_REG;
+		break;
+	}
+}
+
+static int
+dhdsdio_read_bl_cons_log(dhd_bus_t *bus)
+{
+	dhd_timeout_t tmo;
+	uint32 timeout = MAX_READ_TIMEOUT;
+	uint32 cons_addr = 0;
+
+	if (bus->sih == NULL) {
+		if (bus->dhd && bus->dhd->dongle_reset) {
+			DHD_ERROR(("%s: Dongle is in reset state\n", __FUNCTION__));
+			return BCME_NOTREADY;
+		} else {
+			ASSERT(bus->dhd);
+			ASSERT(bus->sih);
+			DHD_ERROR(("%s: The address of sih is invalid\n", __FUNCTION__));
+			return BCME_ERROR;
+		}
+	}
+
+	if (bus->fwsig_filename[0] == 0 || !bus->sig_loaded)
+		return BCME_OK;
+
+	/* read bootrom console address */
+	dhd_timeout_start(&tmo, timeout);
+	while (!dhd_timeout_expired(&tmo)) {
+		if (cons_addr == 0) {
+			int ret = BCME_OK;
+
+			ret =  dhdsdio_membytes(bus, FALSE, bus->bl_cons_addr_reg,
+				(uint8 *)&cons_addr, sizeof(cons_addr));
+			if (ret != BCME_OK) {
+				DHD_ERROR(("%s: error %d on reading %zu membytes at 0x%08x\n",
+					__FUNCTION__, ret, sizeof(cons_addr),
+					bus->bl_cons_addr_reg));
+			} else {
+				if (cons_addr != 0) {
+					bus->rd_shared_pass_time = OSL_LOCALTIME_NS();
+					if (cons_addr != 0 && cons_addr != 0xffffffff) {
+						DHD_ERROR(("Total time bootrom c_main to "
+							"Readshared pass took %llu usec ##\n",
+							DIV_U64_BY_U32((bus->rd_shared_pass_time -
+							bus->arm_oor_time), NSEC_PER_USEC)));
+						DHD_ERROR(("%s: BL_CONS_ADDR 0x%x \n",
+							__FUNCTION__, cons_addr));
+					}
+					if (cons_addr == 0xffffffff) {
+						dhdsdio_membytes(bus, TRUE, bus->bl_cons_addr_reg,
+							(uint8 *)&cons_addr, sizeof(cons_addr));
+						DHD_ERROR(("BOOTROM CONSOLE DONE\n"));
+						return BCME_OK;
+					}
+					bus->console_addr = cons_addr;
+					if (dhdsdio_readconsole(bus) < 0) {
+						DHD_ERROR(("%s: *Warning, read console error,"
+							" disable dconpoll\n", __FUNCTION__));
+						/* On error, stop trying */
+						bus->dhd->dhd_console_ms = 1;
+					}
+				}
+			}
+		} else {
+			int bootrom_ret = BCME_OK;
+
+			if (bus->dhd->dhd_console_ms) {
+				int ret = dhdsdio_readconsole(bus);
+				if (ret < 0) {
+					DHD_ERROR(("%s: *Warning, read console error(%d),"
+						" disable dconpoll\n", __FUNCTION__, ret));
+					bus->dhd->dhd_console_ms = 1; /* On error, stop trying */
+				}
+			}
+			bootrom_ret =  dhdsdio_membytes(bus, FALSE, bus->bl_cons_addr_reg,
+				(uint8 *)&cons_addr, sizeof(cons_addr));
+			if (bootrom_ret != BCME_OK) {
+				DHD_ERROR(("%s: error %d on reading %zu membytes at 0x%08x\n",
+					__FUNCTION__, bootrom_ret,
+					sizeof(cons_addr), bus->bl_cons_addr_reg));
+				return BCME_OK;
+			} else {
+				/* bootloader complete the verification,
+				 * fill console address 0xffffffff.
+				 * host driver should stop polling
+				 */
+				if (cons_addr == 0xffffffff) {
+					bus->rd_sboot_stats_time = OSL_LOCALTIME_NS();
+					DHD_ERROR(("BOOTROM CONSOLE DONE total sboot took "
+						"%llu usec\n",
+						DIV_U64_BY_U32((bus->rd_sboot_stats_time -
+						bus->rd_shared_pass_time), NSEC_PER_USEC)));
+					bus->console_addr = dngl_console_addr;
+					DHD_ERROR(("%s: Update FW Console address %x\n",
+						__FUNCTION__, bus->console_addr));
+					cons_addr = 0x0;
+					dhdsdio_membytes(bus, TRUE, bus->bl_cons_addr_reg,
+						(uint8 *)&cons_addr, sizeof(cons_addr));
+					return BCME_OK;
+				}
+			}
+		}
+	}
+	return BCME_OK;
+}
+#endif /* BL_CONS_LOG */
 
 void
 dhd_bus_check_srmemsize(dhd_pub_t *dhdp)
@@ -4514,7 +4743,7 @@ dhd_socram_dump(dhd_bus_t * bus)
 #endif
 }
 
-int
+static int
 dhdsdio_downloadvars(dhd_bus_t *bus, void *arg, int len)
 {
 	int bcmerror = BCME_OK;
@@ -5250,6 +5479,23 @@ dhdsdio_write_vars(dhd_bus_t *bus)
 	varaddr = (bus->ramsize - 4) - varsize;
 
 	varaddr += bus->dongle_ram_base;
+#ifdef DHD_METADATA_DOWNLOAD
+	if (metadata.enabled == TRUE) {
+		if (metadata.nvram_loc.present == TRUE) {
+			varaddr = metadata.nvram_loc.nvram_start;
+			if (varsize >= metadata.nvram_loc.nvram_max_size) {
+				DHD_ERROR(("%s: NVRAM Size (%d bytes) larger than "
+					"nvram_max_size (%lld bytes)!\n",
+					__FUNCTION__, varsize, metadata.nvram_loc.nvram_max_size));
+				return BCME_NOMEM;
+			}
+		} else {
+			DHD_ERROR(("%s: (0x%x) - TLV Absent."
+				"Proceeding with Normal NVRAM Download...\n",
+				__FUNCTION__, NVRAM_LOCATION));
+		}
+	}
+#endif /* DHD_METADATA_DOWNLOAD */
 	bus->ramtop_addr = varaddr;
 
 	if (bus->vars) {
@@ -5309,17 +5555,21 @@ dhdsdio_write_vars(dhd_bus_t *bus)
 		MFREE(bus->dhd->osh, vbuffer, varsize);
 	}
 
-	phys_size = REMAP_ENAB(bus) ? bus->ramsize : bus->orig_ramsize;
-
-	phys_size += bus->dongle_ram_base;
-
+#ifdef DHD_METADATA_DOWNLOAD
+	if ((metadata.enabled == TRUE) && (metadata.nvram_loc.present == TRUE))
+		phys_size = metadata.nvram_loc.nvram_end + 4;
+	else
+#endif /* DHD_METADATA_DOWNLOAD */
+	{
+		phys_size = REMAP_ENAB(bus) ? bus->ramsize : bus->orig_ramsize;
+		phys_size += bus->dongle_ram_base;
+		varsize = ((phys_size - 4) - varaddr);
+	}
 	/* adjust to the user specified RAM */
 	DHD_INFO(("Physical memory size: %d, usable memory size: %d\n",
 		phys_size, bus->ramsize));
-	DHD_INFO(("Vars are at %d, orig varsize is %d\n",
+	DHD_INFO(("Vars are at 0x%x, Updated varsize is %d\n",
 		varaddr, varsize));
-	varsize = ((phys_size - 4) - varaddr);
-
 	/*
 	 * Determine the length token:
 	 * Varsize, converted to words, in lower 16-bits, checksum in upper 16-bits.
@@ -5526,12 +5776,24 @@ dhdsdio_download_state(dhd_bus_t *bus, bool enter)
 						bcmerror = BCME_SDIO_ERROR;
 						goto fail;
 					}
+#ifdef SYNA_FW_SIGNATURE
+					else if (bcmerror != BCME_OK) {
+						if (dhd_conf_syna_secure_chip(bus->dhd)) {
+							DHD_ERROR(("WARNING: ROM protect bit set or "
+								"SDIO error. Ignore and proceed\n"));
+							bcmerror = BCME_OK;
+						}
+					}
+#endif /* SYNA_FW_SIGNATURE */
 				}
 
 				/* now remove reset and halt and continue to run CR4 */
 			}
 		}
 
+#ifdef BL_CONS_LOG
+		bus->arm_oor_time = OSL_LOCALTIME_NS();
+#endif /* BL_CONS_LOG */
 		si_core_reset(bus->sih, 0, 0);
 		if (bcmsdh_regfail(bus->sdh)) {
 			DHD_ERROR(("%s: Failure trying to reset ARM core?\n", __FUNCTION__));
@@ -5559,7 +5821,7 @@ dhdsdio_bus_download_fw_signature(dhd_bus_t *bus, bool *do_write)
 {
 	int bcmerror = BCME_OK;
 
-	DHD_ERROR(("FWSIG: bl=%s,%x fw=%x,%u sig=%s,%x,%u"
+	DHD_INFO(("FWSIG: bl=%s,%x fw=%x,%u sig=%s,%x,%u"
 		" stat=%x,%u ram=%x,%x\n",
 		bus->bootloader_filename, bus->bootloader_addr,
 		bus->fw_download_addr, bus->fw_download_len,
@@ -5583,8 +5845,11 @@ dhdsdio_bus_download_fw_signature(dhd_bus_t *bus, bool *do_write)
 
 	/* Write FW signature to memory */
 	if ((bcmerror = dhdsdio_bus_write_fw_signature(bus))) {
-		DHD_ERROR(("%s: could not write FWsig , err %d\n",
-			__FUNCTION__, bcmerror));
+		if (bcmerror == BCME_NOTFOUND)
+			bcmerror = BCME_OK;
+		else
+			DHD_ERROR(("%s: could not write FWsig , err %d\n",
+				__FUNCTION__, bcmerror));
 		goto exit;
 	}
 
@@ -5613,11 +5878,15 @@ dhdsdio_bus_write_fw_signature(dhd_bus_t *bus)
 	/* Write FW signature rTLV to TCM */
 	if ((bcmerror = dhdsdio_bus_write_fwsig(bus, bus->fwsig_filename,
 		NULL))) {
-		DHD_ERROR(("%s: could not write FWsig to TCM, err %d\n",
-			__FUNCTION__, bcmerror));
+		if (bcmerror != BCME_NOTFOUND)
+			DHD_ERROR(("%s: could not write FWsig to TCM, err %d\n",
+				__FUNCTION__, bcmerror));
 		goto exit;
 	}
 
+#ifdef SYNA_FW_SIGNATURE
+	if (!dhd_conf_syna_secure_chip(bus->dhd)) {
+#endif /* SYNA_FW_SIGNATURE */
 	/* Write FW signature verification status rTLV to TCM */
 	if ((bcmerror = dhdsdio_bus_write_fws_status(bus)) != BCME_OK) {
 		DHD_ERROR(("%s: could not write FWinfo to TCM, err %d\n",
@@ -5631,6 +5900,9 @@ dhdsdio_bus_write_fw_signature(dhd_bus_t *bus)
 			__FUNCTION__, bcmerror));
 		goto exit;
 	}
+#ifdef SYNA_FW_SIGNATURE
+	}
+#endif /* SYNA_FW_SIGNATURE */
 
 	/* Write a end-of-TLVs marker to TCM */
 	if ((bcmerror = dhdsdio_download_rtlv_end(bus)) != BCME_OK) {
@@ -5874,15 +6146,48 @@ dhdsdio_bus_save_download_info(dhd_bus_t *bus, uint32 download_addr,
 	return BCME_OK;
 } /* dhdsdio_bus_save_download_info */
 
+#ifdef SYNA_FW_SIGNATURE
+static int
+sig_file_size_check(const uint8 *sig_data, int sig_len)
+{
+	int sig_exp_size = 0, i = 0;
+
+	for (i = SIG_HEADER_LEN - 1; i >= SIG_HEADER_LEN - SIG_SIZE_LEN; i--) {
+		sig_exp_size = (sig_exp_size << 8) | sig_data[i];
+	}
+	sig_exp_size += SIG_HEADER_LEN;
+	if (sig_exp_size != sig_len) {
+		DHD_ERROR(("%s: SIG FILE Size Mismatch ! \n", __FUNCTION__));
+		return BCME_ERROR;
+	}
+
+	return BCME_OK;
+}
+
+static void
+sig_file_download_addr(struct dhd_bus *bus)
+{
+	switch ((uint16)bus->sih->chip) {
+	case BCM4612_CHIP_ID:
+	case BCM43711_CHIP_ID:
+		bus->ramtop_addr = SIG_FILE_DOWNLOAD_ADDR;
+		break;
+	default:
+		break;
+	}
+}
+#endif /* SYNA_FW_SIGNATURE */
+
 /* Read a binary file and write it to the specified socram dest address */
-#ifdef DHD_LINUX_STD_FW_API
 static int
 dhdsdio_download_sig_file(dhd_bus_t *bus, char *path, uint32 type)
 {
 	int bcmerror = BCME_OK;
-	int srcsize = 0;
+	int srcsize = 0, buf_size = 0, offset = 0;
 	uint32 dest_size = 0;   /* dongle RAM dest size */
-	const struct firmware *sig = NULL;
+	FWPKG_FILE *sig = NULL;
+	fwpkg_info_t *fwpkg = &bus->dhd->info->fwpkg;
+	uint8 *memptr = NULL;
 
 	if (path == NULL || path[0] == '\0') {
 		DHD_ERROR(("%s: no file\n", __FUNCTION__));
@@ -5890,26 +6195,72 @@ dhdsdio_download_sig_file(dhd_bus_t *bus, char *path, uint32 type)
 		goto exit;
 	}
 
-	bcmerror = dhd_os_get_img_fwreq(&sig, bus->fwsig_filename);
-	if (bcmerror < 0) {
-		DHD_ERROR(("dhd_os_get_img(Request Firmware API) error : %d\n",
-			bcmerror));
+	srcsize = fwpkg_open_firmware_img(&sig, fwpkg, FWPKG_TAG_SIG, path,
+		__FUNCTION__);
+	if (srcsize <= 0) {
+		DHD_ERROR(("%s: Ignore signature file %s\n", __FUNCTION__, path));
+		bcmerror = BCME_NOTFOUND;
 		goto exit;
 	}
-	DHD_ERROR(("%s: dhd_os_get_img(Request Firmware API) success. size %d.\n",
-		__FUNCTION__, (int)sig->size));
 
-	srcsize = sig->size;
-	if (srcsize <= 0 || srcsize > MEMBLOCK) {
+#ifdef SYNA_FW_SIGNATURE
+	if (dhd_conf_syna_secure_chip(bus->dhd)) {
+		if ((metadata.enabled == TRUE) && (metadata.sign_file.present == TRUE) &&
+				(metadata.sign_file.sign_size)) {
+			offset = metadata.sign_file.sign_addr;
+			srcsize = metadata.sign_file.sign_size;
+			DHD_ERROR(("%s: fwsig size %u\n", __FUNCTION__, srcsize));
+		}
+	}
+#endif /* SYNA_FW_SIGNATURE */
+
+	if (srcsize > MEMBLOCK) {
 		DHD_ERROR(("%s: invalid fwsig size %u\n", __FUNCTION__, srcsize));
 		bcmerror = BCME_BUFTOOSHORT;
 		goto exit;
 	}
 
+	buf_size = srcsize + ROUNDUP(srcsize, 8);
+	memptr = MALLOC(bus->dhd->osh, buf_size);
+	if (memptr == NULL) {
+		DHD_ERROR(("%s: Failed to allocate memory %d bytes\n", __FUNCTION__,
+			srcsize));
+		bcmerror = BCME_NOMEM;
+		goto exit;
+	}
+
+	dest_size = fwpkg_get_firmware_img_block(sig, fwpkg, FWPKG_TAG_SIG,
+		memptr, srcsize, offset);
+	if (dest_size <= 0) {
+		DHD_ERROR(("%s: get image block failed (%d)\n", __FUNCTION__, dest_size));
+		bcmerror = BCME_ERROR;
+		goto exit;
+	}
+
+#ifdef SYNA_FW_SIGNATURE
+	if (dhd_conf_syna_secure_chip(bus->dhd)) {
+		bcmerror = sig_file_size_check(memptr, srcsize);
+		if (bcmerror == BCME_ERROR) {
+			goto exit;
+		}
+		sig_file_download_addr(bus);
+		dest_size = ROUNDUP(srcsize, 8);
+	} else
+#endif /* SYNA_FW_SIGNATURE */
 	dest_size = ROUNDUP(srcsize, 4);
+#ifdef DHD_METADATA_DOWNLOAD
+	if ((metadata.enabled == TRUE) && (metadata.sign_file.present == TRUE) &&
+			(metadata.sign_file.sign_size)) {
+//		bus->ramtop_addr = metadata.sign_file.sign_addr;
+	}
+#endif /* DHD_METADATA_DOWNLOAD */
+#ifdef BL_CONS_LOG
+	if (dhd_conf_syna_secure_chip(bus->dhd))
+		bl_console_register(bus);
+#endif /* BL_CONS_LOG */
 	/* Write the src buffer as a rTLV to the dongle */
 	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
-	bcmerror = dhdsdio_download_rtlv(bus, type, dest_size, (uint8 *)sig->data);
+	bcmerror = dhdsdio_download_rtlv(bus, type, dest_size, memptr);
 	GCC_DIAGNOSTIC_POP();
 	if (bcmerror) {
 		DHD_ERROR(("%s: error %d on writing %d membytes at 0x%08x\n",
@@ -5921,82 +6272,13 @@ dhdsdio_download_sig_file(dhd_bus_t *bus, char *path, uint32 type)
 	bus->fwsig_download_len = dest_size;
 
 exit:
+	if (memptr)
+		MFREE(bus->dhd->osh, memptr, buf_size);
 	if (sig)
-	dhd_os_close_img_fwreq(sig);
+		fwpkg_close_firmware_img(sig);
 
 	return bcmerror;
 }
-#else
-static int
-dhdsdio_download_sig_file(dhd_bus_t *bus, char *path, uint32 type)
-{
-	int bcmerror = BCME_OK;
-	void *filep = NULL;
-	uint8 *srcbuf = NULL;
-	int srcsize = 0;
-	int len;
-	uint32 dest_size = 0;   /* dongle RAM dest size */
-	fwpkg_info_t *fwpkg = NULL;
-
-	if (path == NULL || path[0] == '\0') {
-		DHD_ERROR(("%s: no file\n", __FUNCTION__));
-		bcmerror = BCME_NOTFOUND;
-		goto exit;
-	}
-
-	bcmerror = fwpkg_init(&bus->fwpkg, path);
-	if (bcmerror == BCME_ERROR) {
-		printf("%s: fwpkg_init failed %s\n", __FUNCTION__, path);
-		goto exit;
-	}
-	fwpkg = &bus->fwpkg;
-
-	/* Open file, get size */
-	bcmerror = fwpkg_open_signature_img(fwpkg, path, &filep);
-	if (bcmerror == BCME_ERROR) {
-		DHD_ERROR(("%s: error opening file %s\n", __FUNCTION__, path));
-		goto exit;
-	}
-
-	srcsize = fwpkg_get_signature_img_size(fwpkg);
-
-	if (srcsize <= 0 || srcsize > MEMBLOCK) {
-		DHD_ERROR(("%s: invalid fwsig size %u\n", __FUNCTION__, srcsize));
-		bcmerror = BCME_BUFTOOSHORT;
-		goto exit;
-	}
-	dest_size = ROUNDUP(srcsize, 4);
-
-	/* Allocate src buffer, read in the entire file */
-	srcbuf = (uint8 *)MALLOCZ(bus->dhd->osh, dest_size);
-	if (!srcbuf) {
-		bcmerror = BCME_NOMEM;
-		goto exit;
-	}
-	len = dhd_os_get_image_block(srcbuf, srcsize, filep);
-	if (len != srcsize) {
-		DHD_ERROR(("%s: dhd_os_get_image_block failed (%d)\n", __FUNCTION__, len));
-		bcmerror = BCME_BADLEN;
-		goto exit;
-	}
-
-	/* Write the src buffer as a rTLV to the dongle */
-	bcmerror = dhdsdio_download_rtlv(bus, type, dest_size, srcbuf);
-
-	bus->fwsig_download_addr = bus->ramtop_addr;
-	bus->fwsig_download_len = dest_size;
-
-exit:
-	if (filep) {
-		dhd_os_close_image1(bus->dhd, filep);
-	}
-	if (srcbuf) {
-		MFREE(bus->dhd->osh, srcbuf, dest_size);
-	}
-
-	return bcmerror;
-} /* dhdsdio_download_sig_file */
-#endif /* DHD_LINUX_STD_FW_API */
 
 static int
 dhdsdio_bus_write_fwsig(dhd_bus_t *bus, char *fwsig_path, char *nvsig_path)
@@ -6006,8 +6288,12 @@ dhdsdio_bus_write_fwsig(dhd_bus_t *bus, char *fwsig_path, char *nvsig_path)
 	/* Download the FW signature file to the chip */
 	bcmerror = dhdsdio_download_sig_file(bus, fwsig_path, DNGL_RTLV_TYPE_FW_SIGNATURE);
 	if (bcmerror) {
+		bus->sig_loaded = FALSE;
+		if (bcmerror == BCME_NOTFOUND)
+			return bcmerror;
 		goto exit;
 	}
+	bus->sig_loaded = TRUE;
 
 exit:
 	if (bcmerror) {
@@ -6042,10 +6328,16 @@ dhd_bus_dump_fws(dhd_bus_t *bus, struct bcmstrbuf *strbuf)
 	bl_mem_info_t     meminfo;
 	int               err = BCME_OK;
 
+#ifdef SYNA_FW_SIGNATURE
+	if (!dhd_conf_syna_secure_chip(bus->dhd)) {
+#endif /* SYNA_FW_SIGNATURE */
 	err = dhdsdio_read_fwstatus(bus, &status);
 	if (err != BCME_OK) {
 		return (err);
 	}
+#ifdef SYNA_FW_SIGNATURE
+	}
+#endif /* SYNA_FW_SIGNATURE */
 
 	bzero(&meminfo, sizeof(meminfo));
 	if (bus->fw_memmap_download_addr != 0) {
@@ -6058,6 +6350,9 @@ dhd_bus_dump_fws(dhd_bus_t *bus, struct bcmstrbuf *strbuf)
 		}
 	}
 
+#ifdef SYNA_FW_SIGNATURE
+	if (!dhd_conf_syna_secure_chip(bus->dhd)) {
+#endif /* SYNA_FW_SIGNATURE */
 	bcm_bprintf(strbuf, "Firmware signing\nSignature: (%08x) len (%d)\n",
 		bus->fwsig_download_addr, bus->fwsig_download_len);
 
@@ -6084,6 +6379,9 @@ dhd_bus_dump_fws(dhd_bus_t *bus, struct bcmstrbuf *strbuf)
 		status.max_allocs,
 		status.max_alloc_size,
 		status.alloc_failures);
+#ifdef SYNA_FW_SIGNATURE
+	}
+#endif /* SYNA_FW_SIGNATURE */
 
 	bcm_bprintf(strbuf,
 		"Memory info: (%08x)\n"
@@ -6417,6 +6715,11 @@ dhd_bus_init(dhd_pub_t *dhdp, bool enforce_mutex)
 	if (enforce_mutex)
 		dhd_os_sdlock(bus->dhd);
 
+#if defined(BL_CONS_LOG)
+	if (dhd_conf_syna_secure_chip(bus->dhd))
+		dhdsdio_read_bl_cons_log(bus);
+#endif /* BL_CONS_LOG */
+
 	/* Make sure backplane clock is on, needed to generate F2 interrupt */
 	dhdsdio_clkctl(bus, CLK_AVAIL, FALSE);
 	if (bus->clkstate != CLK_AVAIL) {
@@ -6639,7 +6942,10 @@ exit:
 	if (enforce_mutex)
 		dhd_os_sdunlock(bus->dhd);
 #if defined(FW_SIGNATURE)
-	if ((ret == BCME_ERROR) && (bus->fwsig_filename[0] != 0)) {
+#ifdef SYNA_FW_SIGNATURE
+	if (!dhd_conf_syna_secure_chip(bus->dhd)) {
+#endif /* SYNA_FW_SIGNATURE */
+	if ((ret == BCME_ERROR) && (bus->fwsig_filename[0] != 0) && bus->sig_loaded) {
 		bl_verif_status_t status;
 
 		(void)dhdsdio_read_fwstatus(bus, &status);
@@ -6666,6 +6972,9 @@ exit:
 			status.max_alloc_size,
 			status.alloc_failures));
 	}
+#ifdef SYNA_FW_SIGNATURE
+	}
+#endif /* SYNA_FW_SIGNATURE */
 #endif /* FW_SIGNATURE */
 	/* XXX Temp errnum workaround: return ok, caller checks bus state */
 	return ret;
@@ -8206,7 +8515,7 @@ dhdsdio_dpc(dhd_bus_t *bus)
 	uint retries = 0;
 	uint rxlimit = dhd_rxbound; /* Rx frames to read before resched */
 	uint txlimit = dhd_txbound; /* Tx frames to send before resched */
-	uint framecnt = 0;		  /* Temporary counter of tx/rx frames */
+	int framecnt = 0;		  /* Temporary counter of tx/rx frames */
 	bool rxdone = TRUE;		  /* Flag for no more read data */
 	bool resched = FALSE;	  /* Flag indicating resched wanted */
 	unsigned long flags;
@@ -8481,7 +8790,13 @@ clkwait:
 			else
 				framecnt = rxdone ? txlimit : MIN(txlimit, bus->dhd->conf->dhd_txminmax);
 			framecnt = dhdsdio_sendfromq(bus, framecnt);
-			txlimit -= framecnt;
+			if (framecnt < 0) {
+				/* Error was returned */
+				resched = FALSE;
+				goto exit;
+			} else {
+				txlimit -= framecnt;
+			}
 	}
 	/* Resched the DPC if ctrl cmd is pending on bus credit */
 	if (bus->ctrl_frame_stat) {
@@ -8502,6 +8817,9 @@ clkwait:
 			/* Bus failed because of KSO */
 			DHD_ERROR(("%s: Bus failed due to KSO\n", __FUNCTION__));
 			bus->kso = FALSE;
+#if defined(CUSTOMER_HW4)
+			bus->sleeping = TRUE; /* Let BUS_WAKE trigger wake attempt */
+#endif /* CUSTOMER_HW4 */
 		} else {
 			DHD_ERROR(("%s: failed backplane access over SDIO, halting operation\n",
 				__FUNCTION__));
@@ -8516,6 +8834,12 @@ clkwait:
 		}
 	} else if (bus->clkstate == CLK_PENDING) {
 		/* Awaiting I_CHIPACTIVE; don't resched */
+#if defined(CUSTOMER_HW4)
+		if (resched) {
+			DHD_ERROR(("dhdsdio_dpc: don't reschedule till clocked\n"));
+		}
+		resched = FALSE;
+#endif /* CUSTOMER_HW4 */
 	} else if (bus->intstatus || bus->ipend ||
 			(!bus->fcstate && (pktq_mlen(&bus->txq, ((~bus->flowcontrol)
 #ifdef DHD_LOSSLESS_ROAMING
@@ -8606,7 +8930,7 @@ dhd_bus_dpc(struct dhd_bus *bus)
 	return resched;
 }
 
-void
+static void
 dhdsdio_isr(void *arg)
 {
 	dhd_bus_t *bus = (dhd_bus_t*)arg;
@@ -8619,7 +8943,7 @@ dhdsdio_isr(void *arg)
 	sdh = bus->sdh;
 
 	if (bus->dhd->busstate == DHD_BUS_DOWN) {
-		DHD_ERROR(("%s : bus is down. we have nothing to do\n", __FUNCTION__));
+		DHD_TRACE(("%s : bus is down. we have nothing to do\n", __FUNCTION__));
 		return;
 	}
 	/* XXX Overall operation:
@@ -9071,7 +9395,8 @@ int dhd_bus_oob_intr_register(dhd_pub_t *dhdp)
 	int err = 0;
 
 #if defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID)
-	err = bcmsdh_oob_intr_register(dhdp->bus->sdh, dhdsdio_isr, dhdp->bus);
+	if (dhdp->bus->intr)
+		err = bcmsdh_oob_intr_register(dhdp->bus->sdh, dhdsdio_isr, dhdp->bus);
 #endif
 	return err;
 }
@@ -9555,6 +9880,8 @@ dhdsdio_chipmatch(uint16 chipid)
 		return TRUE;
 	if (chipid == BCM43711_CHIP_ID)
 		return TRUE;
+	if (chipid == BCM4612_CHIP_ID)
+		return TRUE;
 	return FALSE;
 }
 
@@ -9722,12 +10049,23 @@ dhdsdio_probe(uint16 venid, uint16 devid, uint16 bus_no, uint16 slot,
 #if defined(LINUX) || defined(linux)
 	}
 	else {
+#if defined(CUSTOMER_HW4) && defined(WL_STATIC_IF)
+		/* Populate address from file if existing,
+		 * or randomly otherwise.
+		 */
+#ifndef DHD_MAC_ADDR_EXPORT
+		dhd_read_macaddr_from_file(bus->dhd, &bus->dhd->mac);
+#else
+		dhd_set_macaddr_from_file(bus->dhd);
+#endif /* DHD_MAC_ADDR_EXPORT */
+#else
 		/* Set random MAC address during boot time */
 		get_random_bytes(&bus->dhd->mac.octet[3], 3);
 		/* Adding BRCM OUI */
 		bus->dhd->mac.octet[0] = 0;
 		bus->dhd->mac.octet[1] = 0x90;
 		bus->dhd->mac.octet[2] = 0x4C;
+#endif /* CUSTOMER_HW4 && WL_STATIC_IF */
 	}
 #endif /* LINUX || linux */
 #if defined(BT_OVER_SDIO)
@@ -9777,6 +10115,9 @@ dhdsdio_probe_attach(struct dhd_bus *bus, osl_t *osh, void *sdh, void *regsva,
 	int err = 0;
 	uint8 clkctl = 0;
 #endif /* !BCMSPI */
+#ifdef SYN4612_PATCH
+	uint chipid;
+#endif /* SYN4612_PATCH */
 
 	bus->alp_only = TRUE;
 	bus->sih = NULL;
@@ -9790,6 +10131,23 @@ dhdsdio_probe_attach(struct dhd_bus *bus, osl_t *osh, void *sdh, void *regsva,
 	DHD_ERROR(("F1 signature read @0x18000000=0x%4x\n",
 		bcmsdh_reg_read(bus->sdh, si_enum_base(devid), 4)));
 #endif
+
+#ifdef SYN4612_PATCH
+	chipid = bcmsdh_reg_read(bus->sdh, si_enum_base(devid), 4);
+	if (dhd_gci_chipctrl_reg4 && ((chipid & 0xffff) == BCM4612_CHIP_ID)) {
+		if (!dhdsdio_set_siaddr_window(bus, SI_CC_GCI_CHIPCTRL_BASE_DEFAULT)) {
+			bcmsdh_reg_write(bus->sdh, 0x18010040, 4, 0x4);
+			bcmsdh_reg_write(bus->sdh, 0x18010200, 4, dhd_gci_chipctrl_reg4);
+			DHD_INFO(("%s: CC_GCI_CHIPCTRL_04 read @0x18010200=0x%4x\n",
+				__FUNCTION__, bcmsdh_reg_read(bus->sdh, 0x18010200, 4)));
+			if (dhdsdio_set_siaddr_window(bus, si_enum_base(devid))) {
+				DHD_ERROR(("%s: FAILED to return to SI_ENUM_BASE\n", __FUNCTION__));
+			}
+		} else {
+			DHD_ERROR(("%s: FAILED to return to SI_CC_GCI_BASE\n", __FUNCTION__));
+		}
+	}
+#endif /* SYN4612_PATCH */
 
 #ifndef BCMSPI	/* wake-wlan in gSPI will bring up the htavail/alpavail clocks. */
 
@@ -9983,6 +10341,9 @@ dhdsdio_probe_attach(struct dhd_bus *bus, osl_t *osh, void *sdh, void *regsva,
 			case BCM43711_CHIP_ID:
 				bus->dongle_ram_base = CR4_43711_RAM_BASE;
 				break;
+			case BCM4612_CHIP_ID:
+				bus->dongle_ram_base = CR4_4612_RAM_BASE;
+				break;
 			case BCM4369_CHIP_ID:
 				bus->dongle_ram_base = CR4_4369_RAM_BASE;
 				break;
@@ -10048,8 +10409,10 @@ dhdsdio_probe_attach(struct dhd_bus *bus, osl_t *osh, void *sdh, void *regsva,
 
 	/* Set the poll and/or interrupt flags */
 	bus->intr = (bool)dhd_intr;
-	if ((bus->poll = (bool)dhd_poll))
+	if ((bus->poll = (bool)dhd_poll)) {
 		bus->pollrate = 1;
+		bus->force_poll = 1;
+	}
 
 	/* Setting default Glom size */
 	bus->txglomsize = SDPCM_DEFGLOM_SIZE;
@@ -10225,7 +10588,7 @@ dhdsdio_probe_init(dhd_bus_t *bus, osl_t *osh, void *sdh)
 
 int
 dhd_bus_download_firmware(struct dhd_bus *bus, osl_t *osh,
-				char *pfw_path, char *pnv_path)
+                          char *pfw_path, char *pnv_path)
 {
 	int ret;
 
@@ -10240,35 +10603,37 @@ dhd_bus_download_firmware(struct dhd_bus *bus, osl_t *osh,
 int
 dhd_set_bus_params(struct dhd_bus *bus)
 {
+	dhd_pub_t *dhd = bus->dhd;
+	struct dhd_conf *conf = dhd->conf;
 	int ret = 0;
 
-	if (bus->dhd->conf->dhd_poll >= 0) {
-		bus->poll = bus->dhd->conf->dhd_poll;
+	if (conf->dhd_poll >= 0) {
+		bus->poll = conf->dhd_poll;
 		if (!bus->pollrate)
 			bus->pollrate = 1;
-		printf("%s: set polling mode %d\n", __FUNCTION__, bus->dhd->conf->dhd_poll);
+		printf("%s: set polling mode %d\n", __FUNCTION__, conf->dhd_poll);
 	}
-	if (bus->dhd->conf->use_rxchain >= 0) {
-		bus->use_rxchain = (bool)bus->dhd->conf->use_rxchain;
+	if (conf->use_rxchain >= 0) {
+		bus->use_rxchain = (bool)conf->use_rxchain;
 	}
-	if (bus->dhd->conf->txinrx_thres >= 0) {
-		bus->txinrx_thres = bus->dhd->conf->txinrx_thres;
+	if (conf->txinrx_thres >= 0) {
+		bus->txinrx_thres = conf->txinrx_thres;
 	}
-	if (bus->dhd->conf->txglomsize >= 0) {
-		bus->txglomsize = bus->dhd->conf->txglomsize;
+	if (conf->txglomsize >= 0) {
+		bus->txglomsize = conf->txglomsize;
 	}
 	bus->idletime = dhd_idletime;
 #ifdef DYNAMIC_MAX_HDR_READ
-	if (bus->dhd->conf->max_hdr_read <= 0) {
-		bus->dhd->conf->max_hdr_read = MAX_HDR_READ;
+	if (conf->max_hdr_read <= 0) {
+		conf->max_hdr_read = MAX_HDR_READ;
 	}
 	if (bus->hdrbufp) {
-		MFREE(bus->dhd->osh, bus->hdrbufp, bus->dhd->conf->max_hdr_read + DHD_SDALIGN);
+		MFREE(dhd->osh, bus->hdrbufp, conf->max_hdr_read + DHD_SDALIGN);
 	}
-	bus->hdrbufp = MALLOC(bus->dhd->osh, bus->dhd->conf->max_hdr_read + DHD_SDALIGN);
+	bus->hdrbufp = MALLOC(dhd->osh, conf->max_hdr_read + DHD_SDALIGN);
 	if (bus->hdrbufp == NULL) {
 		DHD_ERROR(("%s: MALLOC of %d-byte hdrbufp failed\n",
-			__FUNCTION__, bus->dhd->conf->max_hdr_read + DHD_SDALIGN));
+			__FUNCTION__, conf->max_hdr_read + DHD_SDALIGN));
 		ret = -1;
 		goto exit;
 	}
@@ -10303,7 +10668,7 @@ dhdsdio_download_firmware(struct dhd_bus *bus, osl_t *osh, void *sdh)
 		__FUNCTION__, bus->fw_path, bus->nv_path));
 	DHD_OS_WAKE_LOCK(bus->dhd);
 
-	dhd_conf_set_path_params(bus->dhd, bus->fw_path, bus->nv_path);
+	dhd_conf_set_path_params(bus->dhd);
 	ret = dhd_set_bus_params(bus);
 	if (ret) {
 		goto exit;
@@ -10313,6 +10678,9 @@ dhdsdio_download_firmware(struct dhd_bus *bus, osl_t *osh, void *sdh)
 	dhdsdio_clkctl(bus, CLK_AVAIL, FALSE);
 
 	ret = _dhdsdio_download_firmware(bus);
+#ifdef SHOW_LOGTRACE
+	dhd_init_logstrs(bus->dhd);
+#endif /* SHOW_LOGTRACE */
 
 	dhdsdio_clkctl(bus, CLK_SDONLY, FALSE);
 
@@ -10789,7 +11157,650 @@ dhd_block_compare(uint8 *block_w, uint8 *block_r, int blksize, int ttlsize)
 }
 #endif
 
-#ifdef DHD_LINUX_STD_FW_API
+#ifdef DHD_METADATA_DOWNLOAD
+static void
+dhd_get_metadata_param(uint64 *var, int *prev_pos, int next_pos, uint8 *metadata_block)
+{
+	int i = 0;
+
+	DHD_TRACE(("%s: prev_pos: %d next_pos: %d \n",
+			__FUNCTION__, *prev_pos, next_pos));
+
+	for (i = *prev_pos; i < next_pos; i++) {
+		*var = (*var << 8) | metadata_block[i];
+		(*prev_pos)++;
+	}
+}
+
+static bool
+dhd_metadata_end_reached(uint8 *metadata_block, int prev_pos, int next_pos)
+{
+	uint64 metadata_value = 0;
+
+	next_pos += METADATA_LEN;
+	dhd_get_metadata_param(&metadata_value, &prev_pos, next_pos, metadata_block);
+
+	DHD_TRACE(("%s: metadata value: 0x%llx \n", __FUNCTION__, metadata_value));
+
+	if (metadata_value != METADATA_END) {
+		DHD_TRACE(("Metadata end not reached !!!\n"));
+		return FALSE;
+	}
+
+	DHD_TRACE(("Metadata End Reached !\n"));
+	return TRUE;
+}
+
+static int
+dhd_is_within_ram_range(uint64 addr, dhd_bus_t *bus)
+{
+	uint32 ram_end = bus->dongle_ram_base + bus->ramsize;
+
+	if ((addr < bus->dongle_ram_base) || (addr >= ram_end)) {
+		DHD_ERROR(("%s: Address (0x%llx) not within RAM Range (0x%x - 0x%x) !!\n",
+			__FUNCTION__, addr, bus->dongle_ram_base, ram_end));
+		return BCME_ERROR;
+	}
+
+	return BCME_OK;
+}
+
+static int
+dhd_get_metadata_struct_params(uint8 *metadata_block, dhd_bus_t *bus)
+{
+	int prev_pos = 0, next_pos = 0;
+	uint64 tlv_type = 0, tlv_len = 0, tlv_ver = 0;
+	uint64 content_len = 0, tlv_unknown_content = 0;
+	int i = 0, j = 0, k = 0;
+
+	DHD_TRACE(("%s: Enter \n", __FUNCTION__));
+
+	do {
+		memset(&tlv_type, 0, sizeof(tlv_type));
+		memset(&tlv_len, 0, sizeof(tlv_len));
+		memset(&tlv_ver, 0, sizeof(tlv_ver));
+
+		/* Fetch Type */
+		next_pos += METADATA_TLV_TYPE_LEN;
+		dhd_get_metadata_param(&tlv_type, &prev_pos, next_pos, metadata_block);
+
+		/* Fetch Length */
+		next_pos += METADATA_TLV_LEN_LEN;
+		dhd_get_metadata_param(&tlv_len, &prev_pos, next_pos, metadata_block);
+
+		/* Fetch Version */
+		next_pos += METADATA_TLV_VER_LEN;
+		dhd_get_metadata_param(&tlv_ver, &prev_pos, next_pos, metadata_block);
+
+		if (android_msg_level & ANDROID_INFO_LEVEL)
+			printf("TYPE: %lld, LEN: %lld, VER: %lld\n", tlv_type, tlv_len, tlv_ver);
+
+		switch (tlv_type) {
+			case CHIP_DETAILS:
+				metadata.chip_detail.present = TRUE;
+				metadata.chip_detail.type = tlv_type;
+				metadata.chip_detail.len = tlv_len;
+				metadata.chip_detail.ver = tlv_ver;
+
+				next_pos += metadata.chip_detail.len - METADATA_TLV_VER_LEN;
+
+				/* Fetch Chip ID */
+				for (i = prev_pos; i < next_pos; i++, j++, prev_pos++) {
+					metadata.chip_detail.chip_id[j] = metadata_block[i];
+				}
+
+				DHD_INFO(("CHIP DETAILS \n"
+					"\tChip ID:\t%s \n",
+					metadata.chip_detail.chip_id));
+				break;
+
+			case EXCL_MEM_LOCATION:
+				metadata.excl_mem.present = TRUE;
+				metadata.excl_mem.type = tlv_type;
+				metadata.excl_mem.len = tlv_len;
+				metadata.excl_mem.ver = tlv_ver;
+
+				content_len = metadata.excl_mem.len - METADATA_TLV_VER_LEN;
+
+				/* Fetch Bootloader Memory Start Location */
+				next_pos += DIV_U64_BY_U64(content_len, MAX_EXCL_MEM_CONTENT);
+				dhd_get_metadata_param(&(metadata.excl_mem.mem_start),
+						&prev_pos, next_pos, metadata_block);
+
+				/* Fetch Bootloader Memory End Location */
+				next_pos += DIV_U64_BY_U64(content_len, MAX_EXCL_MEM_CONTENT);
+				dhd_get_metadata_param(&(metadata.excl_mem.mem_end),
+						&prev_pos, next_pos, metadata_block);
+
+				/* Fetch Bootloader Memory Size */
+				next_pos += DIV_U64_BY_U64(content_len, MAX_EXCL_MEM_CONTENT);
+				dhd_get_metadata_param(&(metadata.excl_mem.mem_size),
+						&prev_pos, next_pos, metadata_block);
+
+				DHD_INFO(("FW EXCLUSIVE MEMORY REGION DETAILS \n"
+					"\tMemory Start:\t0x%08llx \n"
+					"\tMemory End:\t0x%08llx \n"
+					"\tMemory Size:\t0x%llx (%lld bytes)\n",
+					metadata.excl_mem.mem_start,
+					metadata.excl_mem.mem_end,
+					metadata.excl_mem.mem_size,
+					metadata.excl_mem.mem_size));
+				break;
+
+			case STARTUP_LOCATION:
+				metadata.startup_loc.present = TRUE;
+				metadata.startup_loc.type = tlv_type;
+				metadata.startup_loc.len = tlv_len;
+				metadata.startup_loc.ver = tlv_ver;
+
+				/* Fetch Startup Location Offset */
+				next_pos += metadata.startup_loc.len - METADATA_TLV_VER_LEN;
+				dhd_get_metadata_param(&(metadata.startup_loc.addr),
+						&prev_pos, next_pos, metadata_block);
+
+				DHD_INFO(("STARTUP LOCATION DETAILS \n"
+					"\tOffset:\t\t0x%08llx \n",
+					metadata.startup_loc.addr));
+				break;
+
+			case NVRAM_LOCATION:
+				metadata.nvram_loc.present = TRUE;
+				metadata.nvram_loc.type = tlv_type;
+				metadata.nvram_loc.len = tlv_len;
+				metadata.nvram_loc.ver = tlv_ver;
+
+				content_len = metadata.nvram_loc.len - METADATA_TLV_VER_LEN;
+
+				/* Fetch NVRAM Start Location */
+				next_pos += DIV_U64_BY_U64(content_len, MAX_NVRAM_CONTENT);
+				dhd_get_metadata_param(&(metadata.nvram_loc.nvram_start),
+						&prev_pos, next_pos, metadata_block);
+
+				/* Fetch NVRAM End Location */
+				next_pos += DIV_U64_BY_U64(content_len, MAX_NVRAM_CONTENT);
+				dhd_get_metadata_param(&(metadata.nvram_loc.nvram_end),
+						&prev_pos, next_pos, metadata_block);
+
+				/* Fetch NVRAM Max Size */
+				next_pos += DIV_U64_BY_U64(content_len, MAX_NVRAM_CONTENT);
+				dhd_get_metadata_param(&(metadata.nvram_loc.nvram_max_size),
+						&prev_pos, next_pos, metadata_block);
+
+				DHD_INFO(("NVRAM LOCATION DETAILS \n"
+					"\tNVRAM Start:\t0x%08llx \n"
+					"\tNVRAM End:\t0x%08llx \n"
+					"\tNVRAM Max Size:\t0x%llx (%lld bytes)\n",
+					metadata.nvram_loc.nvram_start,
+					metadata.nvram_loc.nvram_end,
+					metadata.nvram_loc.nvram_max_size,
+					metadata.nvram_loc.nvram_max_size));
+
+				if (dhd_is_within_ram_range(metadata.nvram_loc.nvram_start, bus)
+					!= BCME_OK ||
+					dhd_is_within_ram_range(metadata.nvram_loc.nvram_end,
+						bus) != BCME_OK)
+					return BCME_ERROR;
+
+				break;
+
+			case CONS_ADDR:
+				metadata.cons_addr.type = tlv_type;
+				metadata.cons_addr.len = tlv_len;
+				metadata.cons_addr.ver = tlv_ver;
+				next_pos += metadata.cons_addr.len - METADATA_TLV_VER_LEN;
+				dhd_get_metadata_param(&(metadata.cons_addr.cons_start),
+						&prev_pos, next_pos, metadata_block);
+				DHD_INFO(("CONSOLE ADDRESS DETAILS \n"
+					"\tCons Start:\t0x%08llx \n",
+					metadata.cons_addr.cons_start));
+
+				if (dhd_is_within_ram_range(metadata.cons_addr.cons_start, bus)
+					!= BCME_OK)
+					return BCME_ERROR;
+
+				break;
+
+			case FW_DL_LOCATION:
+				metadata.fw_dl_loc.enabled = TRUE;
+				metadata.fw_dl_loc.type = tlv_type;
+				metadata.fw_dl_loc.len = tlv_len;
+				metadata.fw_dl_loc.ver = tlv_ver;
+
+				/* Fetch Number of Sections */
+				next_pos += METADATA_TLV_FW_SECTION_NUM_LEN;
+				dhd_get_metadata_param(&(metadata.fw_dl_loc.fw_sec_num), &prev_pos,
+						next_pos, metadata_block);
+
+				content_len = metadata.fw_dl_loc.len -
+					METADATA_TLV_FW_SECTION_NUM_LEN;
+
+				DHD_INFO(("FW SECTION DOWNLOAD LOCATION DETAILS \n"
+							"\tNo. of Sections:\t%lld \n",
+							metadata.fw_dl_loc.fw_sec_num));
+
+				if (metadata.fw_dl_loc.fw_sec_num >
+						METADATA_TLV_FW_SECTION_NUM_LEN) {
+					DHD_ERROR(("%s: Number of Sections (%lld)"
+							" more than Supported (%d) !!\n",
+							__FUNCTION__,
+							metadata.fw_dl_loc.fw_sec_num,
+							METADATA_TLV_FW_SECTION_NUM_LEN));
+				}
+
+				for (k = 0; k < metadata.fw_dl_loc.fw_sec_num; k++) {
+
+					/* Fetch Download Start Location */
+					next_pos += DIV_U64_BY_U64(content_len,
+						(metadata.fw_dl_loc.fw_sec_num * MAX_FW_DL_CONTENT));
+					dhd_get_metadata_param(&(metadata.fw_dl_loc.dl_start[k]),
+							&prev_pos, next_pos, metadata_block);
+
+					/* Fetch Download End Location */
+					next_pos += DIV_U64_BY_U64(content_len,
+						(metadata.fw_dl_loc.fw_sec_num * MAX_FW_DL_CONTENT));
+					dhd_get_metadata_param(&(metadata.fw_dl_loc.dl_end[k]),
+							&prev_pos, next_pos, metadata_block);
+
+					/* Fetch Download Size */
+					next_pos += DIV_U64_BY_U64(content_len,
+						(metadata.fw_dl_loc.fw_sec_num * MAX_FW_DL_CONTENT));
+					dhd_get_metadata_param(&(metadata.fw_dl_loc.dl_size[k]),
+							&prev_pos, next_pos, metadata_block);
+					DHD_INFO(("\t\tSection %d:\n"
+							"\t\tDL Start:\t0x%08llx \n"
+							"\t\tDL End:\t\t0x%08llx \n"
+							"\t\tDL Size:\t0x%llx (%lld bytes)\n",
+							k+1,
+							metadata.fw_dl_loc.dl_start[k],
+							metadata.fw_dl_loc.dl_end[k],
+							metadata.fw_dl_loc.dl_size[k],
+							metadata.fw_dl_loc.dl_size[k]));
+
+					/* Validate section size */
+					if (metadata.fw_dl_loc.dl_size[k]
+							!= (metadata.fw_dl_loc.dl_end[k] -
+							metadata.fw_dl_loc.dl_start[k])) {
+						DHD_ERROR(("%s: Download Section %d Size & Offset"
+								"difference mismatch !\n",
+								__FUNCTION__, k+1));
+						return BCME_ERROR;
+					}
+
+					if (dhd_is_within_ram_range(metadata.fw_dl_loc.dl_start[k],
+							bus) != BCME_OK||
+							dhd_is_within_ram_range(
+								metadata.fw_dl_loc.dl_end[k], bus)
+							!= BCME_OK)
+						return BCME_ERROR;
+				}
+
+				break;
+
+			case TAG_INFO_LOCATION:
+				metadata.tag_info.present = TRUE;
+				metadata.tag_info.type = tlv_type;
+				metadata.tag_info.len = tlv_len;
+				metadata.tag_info.ver = tlv_ver;
+				next_pos += metadata.tag_info.len - METADATA_TLV_VER_LEN;
+				dhd_get_metadata_param(&(metadata.tag_info.addr),
+						&prev_pos, next_pos, metadata_block);
+				DHD_INFO(("TAG-INFO LOCATION DETAILS \n"
+					"\tAddress:\t0x%08llx \n",
+					metadata.tag_info.addr));
+
+				if (dhd_is_within_ram_range(metadata.tag_info.addr, bus)
+					!= BCME_OK)
+					return BCME_ERROR;
+
+				break;
+
+			case SIGNATURE_FILE:
+				metadata.sign_file.present = TRUE;
+				metadata.sign_file.type = tlv_type;
+				metadata.sign_file.len = tlv_len;
+				metadata.sign_file.ver = tlv_ver;
+				content_len = metadata.sign_file.len - METADATA_TLV_VER_LEN;
+				next_pos += content_len / MAX_CERT_CONTENT;
+				dhd_get_metadata_param(&(metadata.sign_file.sign_addr),
+						&prev_pos, next_pos, metadata_block);
+				next_pos += content_len / MAX_CERT_CONTENT;
+				dhd_get_metadata_param(&(metadata.sign_file.sign_size),
+						&prev_pos, next_pos, metadata_block);
+				DHD_INFO(("SIGNATURE DETAILS \n"
+					"\tSignature Addr:\t0x%08llx \n"
+					"\tSignature Size:\t0x%08llx \n",
+					metadata.sign_file.sign_addr,
+					metadata.sign_file.sign_size));
+
+				if ((metadata.enabled == TRUE) && (metadata.sign_file.present == TRUE) &&
+					((!metadata.sign_file.sign_addr) || (metadata.sign_file.sign_addr < bus->dongle_ram_base))) {
+						DHD_INFO(("FW SIGN NOT PART OF FW\n"));
+				} else
+				if (dhd_is_within_ram_range(metadata.sign_file.sign_addr, bus)
+					!= BCME_OK) {
+					return BCME_ERROR;
+				}
+
+				break;
+
+			case CLM_BLOB_LOCATION:
+				metadata.clm_blob_loc.present = TRUE;
+				metadata.clm_blob_loc.type = tlv_type;
+				metadata.clm_blob_loc.len = tlv_len;
+				metadata.clm_blob_loc.ver = tlv_ver;
+				next_pos += metadata.clm_blob_loc.len - METADATA_TLV_VER_LEN;
+				dhd_get_metadata_param(&(metadata.clm_blob_loc.addr),
+						&prev_pos, next_pos, metadata_block);
+				DHD_INFO(("CLM BLOB LOCATION DETAILS \n"
+					"\tAddress:\t0x%08llx \n",
+					metadata.clm_blob_loc.addr));
+
+				if (dhd_is_within_ram_range(metadata.clm_blob_loc.addr, bus)
+					!= BCME_OK)
+					return BCME_ERROR;
+
+				break;
+
+			default:
+				DHD_ERROR(("%s: Unknown Type (0x%llx) Found\n"
+						"Skipping TLV!!!\n", __FUNCTION__, tlv_type));
+
+				/* Skip Content and move to next Type */
+				next_pos += tlv_len - METADATA_TLV_VER_LEN;
+				dhd_get_metadata_param(&(tlv_unknown_content),
+						&prev_pos, next_pos, metadata_block);
+				break;
+		}
+
+	} while (!dhd_metadata_end_reached(metadata_block, prev_pos, next_pos));
+
+	return BCME_OK;
+}
+
+static int
+dhd_fetch_metahdr(FWPKG_FILE *file, fwpkg_info_t *fwpkg, int fw_size)
+{
+	char magic_str[METADATA_LEN] = {0x3e, 0x7a, 0xda, 0x7a};
+	char metahdr[METADATA_HDR_LEN];
+	int offset, i, ret = BCME_OK;
+
+	DHD_INFO(("%s: Enter \n", __FUNCTION__));
+
+	memset(metahdr, 0, METADATA_HDR_LEN);
+	offset = fw_size - METADATA_HDR_LEN;
+	ret = fwpkg_get_firmware_img_block(file, fwpkg, FWPKG_TAG_FW,
+		metahdr, METADATA_HDR_LEN, offset);
+	if (ret <= 0) {
+		DHD_ERROR(("%s: get metadata failed with size %d !!!\n",
+			__FUNCTION__, METADATA_HDR_LEN));
+		goto exit;
+	}
+
+	if (dhd_msg_level & DHD_INFO_VAL)
+		prhex("Metadata Header", metahdr, METADATA_HDR_LEN);
+
+	/* Check if the last 4 bytes have MetaData magic number */
+	offset = METADATA_VER_LEN + METADATA_JUMP_VALUE_LEN;
+	ret = memcmp(&metahdr[offset], magic_str, sizeof(magic_str));
+	DHD_ERROR(("%s: Metadata %s\n", __FUNCTION__, ret ? "Present" : "Absent"));
+	if (ret)
+		goto exit;
+
+	metadata.enabled = TRUE;
+	metadata.version = metahdr[METADATA_JUMP_VALUE_LEN];
+	if (metadata.version != METADATA_STRUCT_VERSION) {
+		DHD_ERROR(("%s: Invalid Meta Data Version (0x%x)\n",
+			__FUNCTION__, metadata.version));
+		ret = BCME_ERROR;
+		goto exit;
+	}
+
+	metadata.jump_value = 0;
+	for (i = 0; i < METADATA_JUMP_VALUE_LEN; i++)
+		metadata.jump_value = (metadata.jump_value << 8) | metahdr[i];
+
+	DHD_ERROR(("Metadata Version: 0x%x, Size 0x%x (%d bytes)\n",
+		metadata.version, metadata.jump_value, metadata.jump_value));
+
+exit:
+	return ret;
+}
+
+static int
+dhd_fetch_metadata(dhd_bus_t *bus, FWPKG_FILE *file, fwpkg_info_t *fwpkg,
+	int fw_size)
+{
+	uint8 *metadata_block = NULL;
+	int offset, meta_size = metadata.jump_value, ret = BCME_OK;
+
+	DHD_INFO(("%s: Enter \n", __FUNCTION__));
+
+	metadata_block = MALLOCZ(bus->dhd->osh, meta_size);
+	if (metadata_block == NULL) {
+		DHD_ERROR(("%s: metadata_block alloc FAIL ! meta_size %u\n",
+			__FUNCTION__, meta_size));
+		ret = BCME_ERROR;
+		goto exit;
+	}
+
+	/* Fetch the entire metadata contents to a block */
+	offset = fw_size - (METADATA_HDR_LEN + meta_size);
+	ret = fwpkg_get_firmware_img_block(file, fwpkg, FWPKG_TAG_FW,
+		metadata_block, meta_size, offset);
+	if (ret <= 0) {
+		DHD_ERROR(("%s: get metadata failed with size %d !!!\n",
+			__FUNCTION__, meta_size));
+		goto exit;
+	} else {
+		ret = BCME_OK;
+	}
+	if (dhd_msg_level & DHD_INFO_VAL)
+		prhex("Metadata Array", metadata_block, meta_size);
+
+	/* Update the metadata contents to each structure params */
+	if (dhd_get_metadata_struct_params(metadata_block, bus) != BCME_OK) {
+		DHD_ERROR(("%s: Error fetching Metadata params !!!\n", __FUNCTION__));
+		ret = BCME_ERROR;
+		goto exit;
+	}
+
+exit:
+	if (metadata_block) {
+		MFREE(bus->dhd->osh, metadata_block, meta_size);
+	}
+
+	return ret;
+}
+
+static int
+dhd_update_tag_info(dhd_bus_t *bus, FWPKG_FILE *file, fwpkg_info_t *fwpkg,
+	int fw_size)
+{
+	const char tag_ucode_prefix[] = {0x3c, 0x55, 0x43};
+	int ret = BCME_OK;
+	uint8 *buffer = NULL, *buffer_w = NULL;
+	int i, offset;
+#ifdef CHECK_DOWNLOAD_FW
+	uint8 *buffer_r = NULL;
+#endif
+
+	DHD_INFO(("%s: Enter \n", __FUNCTION__));
+
+	buffer = (uint8 *)MALLOCZ(bus->dhd->osh, MAX_TAG_INFO_LEN);
+	if (!buffer) {
+		DHD_ERROR(("%s: Failed to allocate memory %d bytes\n", __FUNCTION__,
+			MAX_TAG_INFO_LEN));
+		ret = BCME_NOMEM;
+		goto exit;
+	}
+#ifdef CHECK_DOWNLOAD_FW
+	if (bus->dhd->conf->fwchk) {
+		buffer_r = MALLOCZ(bus->dhd->osh, MAX_TAG_INFO_LEN);
+		if (!buffer_r) {
+			DHD_ERROR(("%s: Failed to allocate memory %d bytes\n", __FUNCTION__,
+				MAX_TAG_INFO_LEN));
+			ret = BCME_NOMEM;
+			goto exit;
+		}
+	}
+#endif
+
+#ifdef SYNA_FW_SIGNATURE
+	if ((metadata.enabled == TRUE) && (metadata.sign_file.present == TRUE) &&
+			(metadata.sign_file.sign_size)) {
+		offset = metadata.sign_file.sign_addr - MAX_TAG_INFO_LEN;
+	} else
+#endif /* SYNA_FW_SIGNATURE */
+	offset = fw_size - (METADATA_HDR_LEN + metadata.jump_value + MAX_TAG_INFO_LEN);
+	ret = fwpkg_get_firmware_img_block(file, fwpkg, FWPKG_TAG_FW,
+		buffer, MAX_TAG_INFO_LEN, offset);
+	if (ret <= 0) {
+		DHD_ERROR(("%s: get tag_info failed with size %d !!!\n",
+			__FUNCTION__, MAX_TAG_INFO_LEN));
+		goto exit;
+	}
+
+	for (i = 0; i < MAX_TAG_INFO_LEN; i++) {
+		/* find out the tag info which will be ucode tag prefix */
+		if (!memcmp(&buffer[i], tag_ucode_prefix, sizeof(tag_ucode_prefix))) {
+			buffer_w = &buffer[i];
+			tag_info_len = MAX_TAG_INFO_LEN - i;
+		}
+	}
+	if (!buffer_w) {
+		DHD_ERROR(("%s: tag info not found\n", __FUNCTION__));
+		ret = BCME_NOTFOUND;
+		goto exit;
+	}
+
+	if (dhd_msg_level & DHD_INFO_VAL)
+		prhex("TAG_INFO", buffer_w, tag_info_len);
+
+	DHD_ERROR(("%s: Writing TAG_INFO (%d bytes) at 0x%08llx\n",
+		__FUNCTION__, tag_info_len, metadata.tag_info.addr));
+
+	ret = dhdsdio_membytes(bus, TRUE, metadata.tag_info.addr,
+		buffer_w, tag_info_len);
+	if (ret) {
+		DHD_ERROR(("%s: error %d on writing %d membytes at 0x%08llx\n",
+			__FUNCTION__, ret, tag_info_len, metadata.tag_info.addr));
+		goto exit;
+	}
+#ifdef CHECK_DOWNLOAD_FW
+	if (bus->dhd->conf->fwchk) {
+		ret = dhdsdio_membytes(bus, FALSE, metadata.tag_info.addr,
+			buffer_r, tag_info_len);
+		if (ret) {
+			DHD_ERROR(("%s: error %d on reading %d membytes at 0x%08llx\n",
+				__FUNCTION__, ret, tag_info_len, metadata.tag_info.addr));
+			goto exit;
+		}
+		ret = dhd_block_compare(buffer_w, buffer_r, 64, tag_info_len);
+		if (ret) {
+			DHD_ERROR(("%s: Downloaded image %d membytes is corrupted at 0x%08llx\n",
+				__FUNCTION__, tag_info_len, metadata.tag_info.addr));
+			goto exit;
+		}
+		DHD_INFO(("%s: Download, Upload and compare succeeded.\n",
+			__FUNCTION__));
+	}
+#endif
+
+exit:
+#ifdef CHECK_DOWNLOAD_FW
+	if (bus->dhd->conf->fwchk) {
+		if (buffer_r)
+			MFREE(bus->dhd->osh, buffer_r, tag_info_len);
+	}
+#endif
+	if (buffer) {
+		MFREE(bus->dhd->osh, buffer, MAX_TAG_INFO_LEN);
+	}
+	return ret;
+}
+
+static int
+dhd_is_metadata_present(dhd_bus_t *bus, char *fwpath)
+{
+	FWPKG_FILE *file = NULL;
+	fwpkg_info_t *fwpkg = &bus->dhd->info->fwpkg;
+	int fw_size = 0, ret = BCME_OK;
+#ifdef TAG_INFO_FW_VER
+	int offset = 0;
+#endif /* TAG_INFO_FW_VER */
+
+	DHD_INFO(("%s: Enter \n", __FUNCTION__));
+
+	if (!fwpath) {
+		ret = BCME_BADARG;
+		goto exit;
+	}
+
+	fw_size = fwpkg_open_firmware_img(&file, fwpkg, FWPKG_TAG_FW, fwpath,
+		__FUNCTION__);
+	if (fw_size <= 0) {
+		DHD_ERROR(("%s: Open firmware file failed %s\n", __FUNCTION__, fwpath));
+		goto exit;
+	}
+
+	ret = dhd_fetch_metahdr(file, fwpkg, fw_size);
+	if (ret)
+		goto exit;
+
+	ret = dhd_fetch_metadata(bus, file, fwpkg, fw_size);
+	if (ret)
+		goto exit;
+
+#ifdef TAG_INFO_FW_VER
+#ifdef SYNA_FW_SIGNATURE
+	if ((metadata.enabled == TRUE) && (metadata.sign_file.present == TRUE) &&
+			(metadata.sign_file.sign_size)) {
+		offset = metadata.sign_file.sign_addr;
+	} else
+#endif /* SYNA_FW_SIGNATURE */
+	if (metadata.enabled == TRUE)
+		offset = fw_size - (METADATA_HDR_LEN + metadata.jump_value);
+	dhd_print_fw_ver_from_file(bus->dhd, file, fwpkg, offset);
+#endif /* TAG_INFO_FW_VER */
+
+	if (metadata.tag_info.present == TRUE)
+		dhd_update_tag_info(bus, file, fwpkg, fw_size);
+
+exit:
+	if (!metadata.enabled) {
+		if (bus->sih->chip == BCM4612_CHIP_ID) {
+			DHD_ERROR(("Metadata needed for SYN%x to proceed !! ret=%d\n",
+					bus->sih->chip, ret));
+			ret = BCME_ERROR;
+		} else {
+			ret = BCME_OK;
+		}
+	}
+	if (file)
+		fwpkg_close_firmware_img(file);
+	return ret;
+}
+
+static void
+dhd_update_startup_addr(uint64 *startup_addr)
+{
+	if (metadata.enabled == TRUE) {
+		if (metadata.startup_loc.present == TRUE) {
+			/* Overwrite default RAMBASE addr if TLV present. */
+			*startup_addr = metadata.startup_loc.addr;
+		} else {
+			DHD_ERROR(("%s: (0x%x) - TLV Absent. Proceeding with Normal "
+				"Startup Location Download...\n",
+				__FUNCTION__, STARTUP_LOCATION));
+		}
+		if (metadata.excl_mem.present == FALSE) {
+			DHD_ERROR(("%s: (0x%x) - TLV Absent.\n",
+				__FUNCTION__, EXCL_MEM_LOCATION));
+		}
+	}
+}
+#endif /* DHD_METADATA_DOWNLOAD */
+
 static int
 dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 {
@@ -10806,23 +11817,32 @@ dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 	uint firmware_sz = 0;
 #endif
 	int offset_end = bus->ramsize;
-	const struct firmware *fw = NULL;
+	FWPKG_FILE *fw = NULL;
 	int buf_offset = 0, residual_len = 0;
+	fwpkg_info_t *fwpkg = &bus->dhd->info->fwpkg;
+	uint64 startup_addr = bus->dongle_ram_base;
 
 	DHD_INFO(("%s: download firmware %s\n", __FUNCTION__, pfw_path));
 
-	/* XXX: Should succeed in opening image if it is actually given through registry
+#ifdef DHD_METADATA_DOWNLOAD
+	dhd_update_startup_addr(&startup_addr);
+#endif
+
+	/* Should succeed in opening image if it is actually given through registry
 	 * entry or in module param.
 	 */
-	bcmerror = dhd_os_get_img_fwreq(&fw, bus->fw_path);
-	if (bcmerror < 0) {
-		DHD_ERROR(("dhd_os_get_img(Request Firmware API) error : %d\n",
-			bcmerror));
+	residual_len = fwpkg_open_firmware_img(&fw, fwpkg, FWPKG_TAG_FW, pfw_path,
+		__FUNCTION__);
+	if (residual_len <= 0) {
+		DHD_ERROR(("%s: Open firmware file failed %s\n", __FUNCTION__, pfw_path));
 		goto err;
 	}
-	bus->fw_download_len = fw->size;
+
+	if (fwpkg_unit_inside(fwpkg, FWPKG_TAG_SIG))
+		strlcpy(bus->fwsig_filename, pfw_path, sizeof(bus->fwsig_filename));
+
+	bus->fw_download_len = residual_len;
 	bus->fw_download_addr = bus->dongle_ram_base;
-	residual_len = fw->size;
 
 	/* Update the dongle image download block size depending on the F1 block size */
 #ifndef NDIS
@@ -10854,10 +11874,20 @@ dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 	initial_jiffies = jiffies;
 #endif
 
+#ifdef TAG_INFO_FW_VER
+	dhd_print_fw_ver_from_file(bus->dhd, fw, fwpkg, residual_len);
+#endif /* TAG_INFO_FW_VER */
+
 	/* Download image */
 	while (residual_len) {
 		len = MIN(residual_len, memblock_size);
-		bcopy((const uint8 *)fw->data + buf_offset, (uint8 *)memptr, len);
+		len = fwpkg_get_firmware_img_block(fw, fwpkg, FWPKG_TAG_FW,
+			memptr, len, buf_offset);
+		if (len <= 0) {
+			DHD_ERROR(("%s: failed to get img block %d\n", __FUNCTION__, len));
+			goto err;
+		}
+
 		/* check if CR4 */
 		if (si_setcore(bus->sih, ARMCR4_CORE_ID, 0)) {
 			/* if address is 0, store the reset instruction to be written in 0 */
@@ -10865,7 +11895,7 @@ dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 			if (offset == 0) {
 				bus->resetinstr = *(((uint32*)memptr));
 				/* Add start of RAM address to the address given by user */
-				offset += bus->dongle_ram_base;
+				offset += startup_addr;
 				offset_end += offset;
 			}
 		}
@@ -10923,70 +11953,278 @@ err:
 	}
 #endif
 
-	if (fw) {
-		dhd_os_close_img_fwreq(fw);
-	}
+	if (fw)
+		fwpkg_close_firmware_img(fw);
 
 	return bcmerror;
 }
-#else
+
+#ifdef DHD_METADATA_DOWNLOAD
 static int
-dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
+dhdsdio_sectionwise_fw_download(struct dhd_bus *bus, char *pfw_path)
 {
 	int bcmerror = -1;
-	int offset = 0;
-	int len;
-	void *image = NULL;
+	int len, buf_offset = 0;
+	fwpkg_info_t *fwpkg = &bus->dhd->info->fwpkg;
+	FWPKG_FILE *file = NULL;
 	uint8 *memblock = NULL, *memptr;
 #ifdef CHECK_DOWNLOAD_FW
 	uint8 *memblock_r = NULL, *memptr_r = NULL;
 #endif
 	uint memblock_size = MEMBLOCK;
-	uint32 file_size = 0;
-	fwpkg_info_t *fwpkg;
+	int dl_start, dl_end, section_size;
+	int idx = 0;
+	int offset = 0;
+	uint32 rem_size = 0;
 #ifdef DHD_DEBUG_DOWNLOADTIME
 	unsigned long initial_jiffies = 0;
-	uint firmware_sz = 0;
 #endif
+	int fw_all_sec_size = 0;
+	int total_fw_size = 0, residual_len = 0;
+	int startup_addr = bus->dongle_ram_base, startup_offset = 0;
 
 	DHD_INFO(("%s: download firmware %s\n", __FUNCTION__, pfw_path));
 
-	/* XXX: Should succeed in opening image if it is actually given through registry
-	 * entry or in module param.
-	 */
-	bcmerror = fwpkg_init(&bus->fwpkg, pfw_path);
-	if (bcmerror == BCME_ERROR) {
-		printf("%s: fwpkg_init failed %s\n", __FUNCTION__, pfw_path);
-		goto err;
+	if (metadata.startup_loc.present == TRUE) {
+		/* Overwrite default RAMBASE addr if TLV present. */
+		startup_addr = metadata.startup_loc.addr;
+	} else {
+		DHD_ERROR(("%s: (0x%x) - TLV Absent. Proceeding with Normal "
+					"Startup Location Download...\n",
+					__FUNCTION__, STARTUP_LOCATION));
 	}
-	fwpkg = &bus->fwpkg;
+	startup_offset += startup_addr;
+
 	/* Should succeed in opening image if it is actually given through registry
 	 * entry or in module param.
 	 */
-	bcmerror = fwpkg_open_firmware_img(fwpkg, pfw_path, &image);
-	if (bcmerror == BCME_ERROR) {
-		printf("%s: Open firmware file failed %s\n", __FUNCTION__, pfw_path);
+	residual_len = fwpkg_open_firmware_img(&file, fwpkg, FWPKG_TAG_FW, pfw_path,
+		__FUNCTION__);
+	if (residual_len <= 0) {
+		DHD_ERROR(("%s: Open firmware file failed %s\n", __FUNCTION__, pfw_path));
 		goto err;
 	}
 
-	if (bcmerror == BCME_UNSUPPORTED) {
-		file_size = fwpkg->file_size;
-		DHD_ERROR(("%s Using SINGLE image (size %d)\n",
-			__FUNCTION__, file_size));
-	} else {
-		file_size = fwpkg_get_firmware_img_size(fwpkg);
+	if (fwpkg_unit_inside(fwpkg, FWPKG_TAG_SIG))
 		strlcpy(bus->fwsig_filename, pfw_path, sizeof(bus->fwsig_filename));
-		DHD_ERROR(("%s Using COMBINED image (size %d)\n",
-			__FUNCTION__, file_size));
-	}
-	bus->fw_download_len = file_size;
+#ifdef SYNA_FW_SIGNATURE
+	else if ((metadata.enabled == TRUE) && (metadata.sign_file.present == TRUE) &&
+			(metadata.sign_file.sign_size))
+		strlcpy(bus->fwsig_filename, pfw_path, sizeof(bus->fwsig_filename));
+#endif /* SYNA_FW_SIGNATURE */
+
+	bus->fw_download_len = residual_len;
 	bus->fw_download_addr = bus->dongle_ram_base;
+
+	if (residual_len > bus->ramsize || residual_len <= 0) {
+		DHD_ERROR(("%s: FW Size (%u bytes) larger than RAM Size (%u bytes)!\n",
+				__FUNCTION__, residual_len, bus->ramsize));
+		goto err;
+	}
+
+	for (idx = 0; idx < metadata.fw_dl_loc.fw_sec_num; idx++) {
+		fw_all_sec_size += metadata.fw_dl_loc.dl_size[idx];
+	}
+
+	/* Additional 1 byte is for appending end marker to
+	 * FW Tag Information in the FW.
+	 */
+	total_fw_size = fw_all_sec_size + metadata.jump_value + tag_info_len +
+		METADATA_HDR_LEN + 1;
+#ifdef SYNA_FW_SIGNATURE
+	if ((metadata.enabled == TRUE) && (metadata.sign_file.present == TRUE) &&
+			(metadata.sign_file.sign_size)) {
+		total_fw_size += metadata.sign_file.sign_size;
+	}
+#endif /* SYNA_FW_SIGNATURE */
+
+	if (residual_len > total_fw_size) {
+		DHD_ERROR(("%s: FW Size (%u bytes) Metadata FW Size (%u bytes) mismatch !\n",
+				__FUNCTION__, residual_len, total_fw_size));
+		goto err;
+	}
 
 	/* Update the dongle image download block size depending on the F1 block size */
 #ifndef NDIS
 	if (sd_f1_blocksize == 512)
 		memblock_size = MAX_MEMBLOCK;
 #endif /* !NDIS */
+
+	memptr = memblock = MALLOC(bus->dhd->osh, memblock_size + DHD_SDALIGN);
+	if (memblock == NULL) {
+		DHD_ERROR(("%s: Failed to allocate memory %d bytes\n",
+				__FUNCTION__, memblock_size));
+		goto err;
+	}
+#ifdef CHECK_DOWNLOAD_FW
+	if (bus->dhd->conf->fwchk) {
+		memptr_r = memblock_r = MALLOC(bus->dhd->osh, memblock_size + DHD_SDALIGN);
+		if (memblock_r == NULL) {
+			DHD_ERROR(("%s: Failed to allocate memory %d bytes\n",
+				__FUNCTION__, memblock_size));
+			goto err;
+		}
+	}
+#endif
+
+#ifdef DHD_DEBUG_DOWNLOADTIME
+	initial_jiffies = jiffies;
+#endif
+
+	for (idx = 0; idx < metadata.fw_dl_loc.fw_sec_num; idx++) {
+		/* Set parameters for Section download */
+
+		/* Set the download offset location to start address of Section */
+		dl_start = metadata.fw_dl_loc.dl_start[idx];
+		dl_end = metadata.fw_dl_loc.dl_end[idx];
+
+		/* Update size of the section to be downloaded */
+		section_size = metadata.fw_dl_loc.dl_size[idx];
+		DHD_INFO(("%s: section=%d, size=%d\n", __FUNCTION__, idx+1, section_size));
+
+		offset = dl_start;
+		rem_size = section_size;
+
+		memptr = memblock;
+		if ((uint32)(uintptr)memblock % DHD_SDALIGN)
+			memptr += (DHD_SDALIGN - ((uint32)(uintptr)memblock % DHD_SDALIGN));
+#ifdef CHECK_DOWNLOAD_FW
+		if (bus->dhd->conf->fwchk) {
+			memptr_r = memblock_r;
+			if ((uint32)(uintptr)memblock_r % DHD_SDALIGN)
+				memptr_r += (DHD_SDALIGN - ((uint32)(uintptr)memblock_r % DHD_SDALIGN));
+		}
+#endif
+
+		/* Download image section */
+		while (residual_len && offset < dl_end) {
+			if (offset + memblock_size < dl_end)
+				len = MIN(residual_len, memblock_size);
+			else
+				len = MIN(residual_len, rem_size);
+			len = fwpkg_get_firmware_img_block(file, fwpkg, FWPKG_TAG_FW,
+				memptr, len, buf_offset);
+			if (len <= 0) {
+				DHD_ERROR(("%s: get image block failed (%d)\n",
+					__FUNCTION__, len));
+				bcmerror = BCME_ERROR;
+				goto err;
+			}
+
+			/* store the reset instruction to be written in 0 */
+			if (startup_offset == startup_addr) {
+				bus->resetinstr = *(((uint32*)memptr));
+				DHD_ERROR(("RST_TRS start from 0x%04x\n", bus->resetinstr));
+			}
+
+			bcmerror = dhdsdio_membytes(bus, TRUE, offset, memptr, len);
+			if (bcmerror) {
+				DHD_ERROR(("%s: error %d on writing %d membytes at 0x%08x\n",
+						__FUNCTION__, bcmerror, len, offset));
+				goto err;
+			}
+#ifdef CHECK_DOWNLOAD_FW
+			if (bus->dhd->conf->fwchk) {
+				bcmerror = dhdsdio_membytes(bus, FALSE, offset, memptr_r, len);
+				if (bcmerror) {
+					DHD_ERROR(("%s: error %d on reading %d membytes at 0x%08x\n",
+						__FUNCTION__, bcmerror, len, offset));
+					goto err;
+				}
+				bcmerror = dhd_block_compare(memptr, memptr_r, 64, len);
+				if (bcmerror) {
+					DHD_ERROR(("%s: Downloaded image %d membytes is corrupted at 0x%08x\n",
+						__FUNCTION__, len, offset));
+					goto err;
+				}
+				DHD_INFO(("%s: Download, Upload and compare succeeded.\n",
+					__FUNCTION__));
+			}
+#endif
+			startup_offset += len;
+			offset += len;
+			buf_offset += len;
+			rem_size -= len;
+			residual_len -= len;
+		}
+	}
+
+#ifdef DHD_DEBUG_DOWNLOADTIME
+	DHD_ERROR(("Firmware download time for %u bytes: %u ms\n",
+			buf_offset, jiffies_to_msecs(jiffies - initial_jiffies)));
+#endif
+
+err:
+	if (memblock)
+		MFREE(bus->dhd->osh, memblock, memblock_size + DHD_SDALIGN);
+#ifdef CHECK_DOWNLOAD_FW
+	if (bus->dhd->conf->fwchk) {
+		if (memblock_r)
+			MFREE(bus->dhd->osh, memblock_r, memblock_size + DHD_SDALIGN);
+	}
+#endif
+
+	if (file)
+		fwpkg_close_firmware_img(file);
+
+	return bcmerror;
+}
+
+static int
+dhdsdio_download_clm_file(dhd_bus_t *bus, char *path)
+{
+	int bcmerror = -1;
+	int offset = 0;
+	int len = 0, residual_len = 0;
+	FWPKG_FILE *file = NULL;
+	fwpkg_info_t clmpkg;
+	int buf_offset = 0;
+	uint8 *memblock = NULL, *memptr;
+#ifdef CHECK_DOWNLOAD_FW
+	uint8 *memblock_r = NULL, *memptr_r = NULL;
+#endif
+	uint memblock_size = MEMBLOCK;
+
+	if (path == NULL || path[0] == '\0') {
+		DHD_ERROR(("%s: no file\n", __FUNCTION__));
+		bcmerror = BCME_NOTFOUND;
+		goto err;
+	}
+
+	memset(&clmpkg, 0, sizeof(fwpkg_info_t));
+
+	/* Open file, get size */
+	residual_len = fwpkg_open_firmware_img(&file, &clmpkg, FWPKG_TAG_ZERO, path,
+		__FUNCTION__);
+	if (residual_len <= 0) {
+		DHD_ERROR(("%s: Failed to open clm file ! %s\n", __FUNCTION__, path));
+		goto err;
+	}
+	if (residual_len > bus->ramsize) {
+		DHD_ERROR(("%s: CLM Size (%d bytes) larger than RAM Size (%d bytes)!\n",
+				__FUNCTION__, residual_len, bus->ramsize));
+		goto err;
+	}
+
+	if (metadata.enabled == TRUE) {
+		if (metadata.clm_blob_loc.present == TRUE)
+			bus->clm_addr = metadata.clm_blob_loc.addr;
+		else if (metadata.clm_blob_loc.present == FALSE) {
+			DHD_ERROR(("%s: (0x%x) - TLV Absent.\n",
+				__FUNCTION__, CLM_BLOB_LOCATION));
+			bcmerror = BCME_BADOPTION;
+			goto err;
+		}
+	} else if (bus->clm_addr == 0) {
+		DHD_ERROR(("%s: Failed to retrieve download address! \n", __FUNCTION__));
+		bcmerror = BCME_UNSUPPORTED;
+		goto err;
+	}
+	DHD_INFO(("download clmblob file: %s at 0x%08x.\n", path, bus->clm_addr));
+
+	/* Update the dongle image download block size depending on the F1 block size */
+	if (sd_f1_blocksize == 512)
+		memblock_size = MAX_MEMBLOCK;
 
 	memptr = memblock = MALLOC(bus->dhd->osh, memblock_size + DHD_SDALIGN);
 	if (memblock == NULL) {
@@ -11004,37 +12242,28 @@ dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 				__FUNCTION__, memblock_size));
 			goto err;
 		}
-		if ((uint32)(uintptr)memblock_r % DHD_SDALIGN)
-			memptr_r += (DHD_SDALIGN - ((uint32)(uintptr)memblock_r % DHD_SDALIGN));
 	}
+	if ((uint32)(uintptr)memblock_r % DHD_SDALIGN)
+		memptr_r += (DHD_SDALIGN - ((uint32)(uintptr)memblock_r % DHD_SDALIGN));
 #endif
 
-#ifdef DHD_DEBUG_DOWNLOADTIME
-	initial_jiffies = jiffies;
-#endif
+	offset += bus->clm_addr;
 
 	/* Download image */
-	while ((len = dhd_os_get_image_block((char*)memptr, memblock_size, image))) {
-		if (len < 0) {
-			DHD_ERROR(("%s: dhd_os_get_image_block failed (%d)\n", __FUNCTION__, len));
+	while (residual_len) {
+		len = MIN(residual_len, memblock_size);
+		len = fwpkg_get_firmware_img_block(file, &clmpkg, FWPKG_TAG_ZERO,
+			memptr, len, buf_offset);
+		if (len <= 0) {
+			DHD_ERROR(("%s: get image block failed (%d)\n", __FUNCTION__, len));
 			bcmerror = BCME_ERROR;
 			goto err;
-		}
-		/* check if CR4 */
-		if (si_setcore(bus->sih, ARMCR4_CORE_ID, 0)) {
-			/* if address is 0, store the reset instruction to be written in 0 */
-
-			if (offset == 0) {
-				bus->resetinstr = *(((uint32*)memptr));
-				/* Add start of RAM address to the address given by user */
-				offset += bus->dongle_ram_base;
-			}
 		}
 
 		bcmerror = dhdsdio_membytes(bus, TRUE, offset, memptr, len);
 		if (bcmerror) {
 			DHD_ERROR(("%s: error %d on writing %d membytes at 0x%08x\n",
-			        __FUNCTION__, bcmerror, len, offset));
+				__FUNCTION__, bcmerror, len, offset));
 			goto err;
 		}
 #ifdef CHECK_DOWNLOAD_FW
@@ -11056,15 +12285,9 @@ dhdsdio_download_code_file(struct dhd_bus *bus, char *pfw_path)
 		}
 #endif
 		offset += len;
-#ifdef DHD_DEBUG_DOWNLOADTIME
-		firmware_sz += len;
-#endif
+		buf_offset += len;
+		residual_len -= len;
 	}
-
-#ifdef DHD_DEBUG_DOWNLOADTIME
-	DHD_ERROR(("Firmware download time for %u bytes: %u ms\n",
-			firmware_sz, jiffies_to_msecs(jiffies - initial_jiffies)));
-#endif
 
 err:
 	if (memblock)
@@ -11075,13 +12298,14 @@ err:
 			MFREE(bus->dhd->osh, memblock_r, memblock_size + DHD_SDALIGN);
 	}
 #endif
-
-	if (image)
-		dhd_os_close_image1(bus->dhd, image);
+	if (file)
+		fwpkg_close_firmware_img(file);
+	if (bcmerror)
+		bus->clm_addr = 0;
 
 	return bcmerror;
-}
-#endif /* DHD_LINUX_STD_FW_API */
+} /* dhdsdio_download_clm_file */
+#endif /* DHD_METADATA_DOWNLOAD */
 
 #ifdef DHD_UCODE_DOWNLOAD
 /* Currently supported only for the chips in which ucode RAM is AXI addressable */
@@ -11274,6 +12498,9 @@ _dhdsdio_download_firmware(struct dhd_bus *bus)
 
 	bool embed = FALSE;	/* download embedded firmware */
 	bool dlok = FALSE;	/* download firmware succeeded */
+#ifdef SYN4612_FHT_PATCH
+	uint8 fht_enable = 1;
+#endif /* SYN4612_FHT_PATCH */
 
 	/* Out immediately if no image to download */
 	if ((bus->fw_path == NULL) || (bus->fw_path[0] == '\0')) {
@@ -11284,15 +12511,48 @@ _dhdsdio_download_firmware(struct dhd_bus *bus)
 #endif
 	}
 
+#ifdef DHD_METADATA_DOWNLOAD
+	/* Initialize Metadata parameters to 0 */
+	memset(&metadata, 0, sizeof(metadata));
+
+	/* Check if MetaData is appended */
+	if (dhd_conf_syna_secure_chip(bus->dhd)) {
+		if (dhd_is_metadata_present(bus, bus->fw_path) != BCME_OK) {
+			goto err;
+		}
+	}
+
+#if defined(DHD_DEBUG) || defined(DHD_FW_LOG_SUPPORT)
+	if ((metadata.enabled == TRUE) && (metadata.cons_addr.type == CONS_ADDR)) {
+		dngl_console_addr = metadata.cons_addr.cons_start;
+	}
+	if (dngl_console_addr) {
+		bus->console_addr = dngl_console_addr;
+	}
+#endif /* defined(DHD_DEBUG) || defined(DHD_FW_LOG_SUPPORT) */
+#endif /* DHD_METADATA_DOWNLOAD */
+
 	/* Keep arm in reset */
 	if (dhdsdio_download_state(bus, TRUE)) {
 		DHD_ERROR(("%s: error placing ARM core in reset\n", __FUNCTION__));
 		goto err;
 	}
 
+#ifdef SYN4612_FHT_PATCH
+	if (BCM4612_CHIP(bus->sih->chip)) {
+		dhdsdio_force_htclk(bus, true, &fht_enable);
+	}
+#endif /* SYN4612_FHT_PATCH */
+
 	/* External image takes precedence if specified */
 	if ((bus->fw_path != NULL) && (bus->fw_path[0] != '\0')) {
-		if (dhdsdio_download_code_file(bus, bus->fw_path)) {
+#ifdef DHD_METADATA_DOWNLOAD
+		if ((metadata.enabled == TRUE) && (metadata.fw_dl_loc.enabled == TRUE))
+			bcmerror = dhdsdio_sectionwise_fw_download(bus, bus->fw_path);
+		else
+#endif /* DHD_METADATA_DOWNLOAD */
+		bcmerror = dhdsdio_download_code_file(bus, bus->fw_path);
+		if (bcmerror) {
 			DHD_ERROR(("%s: dongle image file %s download failed\n",
 				__FUNCTION__, bus->fw_path));
 #ifdef BCMEMBEDIMAGE
@@ -11332,6 +12592,22 @@ _dhdsdio_download_firmware(struct dhd_bus *bus)
 		DHD_ERROR(("%s: dongle nvram file download failed\n", __FUNCTION__));
 		goto err;
 	}
+
+#ifdef DHD_METADATA_DOWNLOAD
+	if ((metadata.enabled == TRUE) && (metadata.clm_blob_loc.present == TRUE)) {
+		/* Download CLM blob file if specified */
+		if ((bcmerror = dhdsdio_download_clm_file(bus, bus->dhd->info->clm_path))) {
+			DHD_ERROR(("%s: could not download CLM blob file, err %d\n",
+				__FUNCTION__, bcmerror));
+		}
+	}
+#endif /* DHD_METADATA_DOWNLOAD */
+
+#ifdef SYN4612_FHT_PATCH
+	if ((BCM4612_CHIP(bus->sih->chip)) && (!fht_enable)) {
+		dhdsdio_force_htclk(bus, false, &fht_enable);
+	}
+#endif /* SYN4612_FHT_PATCH */
 
 	/* Take arm out of reset */
 	if (dhdsdio_download_state(bus, FALSE)) {
@@ -11661,12 +12937,14 @@ dhd_bus_devreset(dhd_pub_t *dhdp, uint8 flag)
 					if (bcmerror == BCME_OK) {
 #if defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID)
 						dhd_enable_oob_intr(bus, TRUE);
-						bcmsdh_oob_intr_register(bus->sdh,
-							dhdsdio_isr, bus);
-						bcmsdh_oob_intr_set(bus->sdh, TRUE);
+						if (bus->intr) {
+							bcmsdh_oob_intr_register(bus->sdh,
+								dhdsdio_isr, bus);
+							bcmsdh_oob_intr_set(bus->sdh, TRUE);
 #elif defined(FORCE_WOWLAN)
-						dhd_enable_oob_intr(bus, TRUE);
+							dhd_enable_oob_intr(bus, TRUE);
 #endif /* defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID) */
+						}
 
 						bus->dhd->dongle_reset = FALSE;
 						bus->dhd->up = TRUE;
@@ -11999,6 +13277,15 @@ dhd_bus_update_fw_nv_path(struct dhd_bus *bus, char *pfw_path, char *pnv_path)
 }
 
 int
+dhd_bus_clm_load_from_fw(struct dhd_bus *bus)
+{
+	if (bus->clm_addr)
+		return TRUE;
+	else
+		return FALSE;
+}
+
+int
 dhd_enableOOB(dhd_pub_t *dhd, bool sleep)
 {
 	dhd_bus_t *bus = dhd->bus;
@@ -12055,16 +13342,6 @@ dhd_bus_pktq_flush(dhd_pub_t *dhdp)
 }
 
 #ifdef BCMSDIO
-int
-dhd_sr_config(dhd_pub_t *dhd, bool on)
-{
-	dhd_bus_t *bus = dhd->bus;
-
-	if (!bus->_srenab)
-		return -1;
-
-	return dhdsdio_clk_devsleep_iovar(bus, on);
-}
 
 uint16
 dhd_get_chipid(struct dhd_bus *bus)
@@ -12548,7 +13825,11 @@ dhdsdio_mpdu_init(dhd_pub_t *dhdp)
 	if (CHIPID(bus->sih->chip) == BCM4381_CHIP_GRPID) {
 		ampdu_mpdu = 32;
 	} else if (CHIPID(bus->sih->chip) == BCM4382_CHIP_GRPID) {
+#ifdef CONFIG_ARCH_ASTRA
+		ampdu_mpdu = 32;
+#else
 		ampdu_mpdu = 16;
+#endif
 	}
 
 	return ampdu_mpdu;

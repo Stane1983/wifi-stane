@@ -3,7 +3,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -22,7 +22,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -99,6 +99,10 @@
 #ifdef DHD_EWPR_VER2
 #include <dhd_bitpack.h>
 #endif /* DHD_EWPR_VER2 */
+#ifdef WL_MONITOR
+#include <dhd_linux.h>
+#endif /* WL_MONITOR */
+#include <dhd_linux_priv.h>
 
 extern char dhd_version[];
 extern char fw_version[];
@@ -933,7 +937,6 @@ static void dhd_prot_process_flow_ring_suspend_response(dhd_pub_t *dhd, void* ms
 /* Monitor Mode */
 #if defined(WL_MONITOR)
 extern bool dhd_monitor_enabled(dhd_pub_t *dhd, int ifidx);
-extern void dhd_rx_mon_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t* msg, void *pkt, int ifidx);
 #if defined(DBG_PKT_MON)
 extern void dhd_80211_mon_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t* msg, void *pkt, int ifidx);
 #endif /* DBG_PKT_MON */
@@ -1355,6 +1358,9 @@ dhd_prot_d2h_sync_livelock(dhd_pub_t *dhd, uint32 msg_seqnum, msgbuf_ring_t *rin
 	dhd_prhex("D2H MsgBuf Failure", msg, msglen, DHD_ERROR_VAL);
 
 	/* Try to resume if already suspended or suspend in progress */
+#ifdef DHD_PCIE_RUNTIMEPM
+	dhdpcie_runtime_bus_wake(dhd, CAN_SLEEP(), __builtin_return_address(0));
+#endif /* DHD_PCIE_RUNTIMEPM */
 
 	/* Skip if still in suspended or suspend in progress */
 	if (DHD_BUS_CHECK_SUSPEND_OR_ANY_SUSPEND_IN_PROGRESS(dhd)) {
@@ -1984,7 +1990,7 @@ typedef struct dhd_pktid_log_item {
 typedef struct dhd_pktid_log {
 	uint32 items;		/* number of total items */
 	uint32 index;		/* index of pktid_log_item */
-	dhd_pktid_log_item_t map[0];	/* metadata storage */
+	dhd_pktid_log_item_t map[];	/* metadata storage */
 } dhd_pktid_log_t;
 
 typedef void * dhd_pktid_log_handle_t; /* opaque handle to pktid log */
@@ -2425,7 +2431,7 @@ typedef struct dhd_pktid_map {
 	struct bcm_mwbmap *pktid_audit; /* multi word bitmap based audit */
 #endif /* DHD_PKTID_AUDIT_ENABLED */
 	dhd_pktid_key_t	*keys; /* map_items +1 unique pkt ids */
-	dhd_pktid_item_t lockers[0];           /* metadata storage */
+	dhd_pktid_item_t lockers[];           /* metadata storage */
 } dhd_pktid_map_t;
 
 /*
@@ -3820,7 +3826,7 @@ dhd_set_host_cap2(dhd_pub_t *dhd)
 }
 #endif /* DHD_PCIE_PTM */
 
-void
+static void
 dhd_set_host_cap(dhd_pub_t *dhd)
 {
 	uint32 data = 0;
@@ -3964,7 +3970,8 @@ dhd_set_host_cap(dhd_pub_t *dhd)
 }
 
 #ifdef AGG_H2D_DB
-void dhd_agg_inflight_stats_dump(dhd_pub_t *dhd, struct bcmstrbuf *strbuf)
+static void
+dhd_agg_inflight_stats_dump(dhd_pub_t *dhd, struct bcmstrbuf *strbuf)
 {
 	uint64 *inflight_histo = dhd->prot->agg_h2d_db_info.inflight_histo;
 	uint32 i;
@@ -3982,7 +3989,8 @@ void dhd_agg_inflight_stats_dump(dhd_pub_t *dhd, struct bcmstrbuf *strbuf)
 	bcm_bprintf(strbuf, "total_inflight_histo: %llu\n", total_inflight_histo);
 }
 
-void dhd_agg_inflights_stats_update(dhd_pub_t *dhd, uint32 inflight)
+static void
+dhd_agg_inflights_stats_update(dhd_pub_t *dhd, uint32 inflight)
 {
 	uint64 *bin = dhd->prot->agg_h2d_db_info.inflight_histo;
 	uint64 *p;
@@ -4018,7 +4026,7 @@ void dhd_agg_inflights_stats_update(dhd_pub_t *dhd, uint32 inflight)
  * do not hold any spin_lock_bh().
  * Using HRTIMER_MODE_REL_SOFT causing TPUT regressions.
  */
-enum hrtimer_restart
+static enum hrtimer_restart
 dhd_msgbuf_agg_h2d_db_timer_fn(struct hrtimer *timer)
 {
 	agg_h2d_db_info_t *agg_db_info;
@@ -4051,7 +4059,7 @@ dhd_msgbuf_agg_h2d_db_timer_fn(struct hrtimer *timer)
 	return HRTIMER_NORESTART;
 }
 
-void
+static void
 dhd_msgbuf_agg_h2d_db_timer_start(dhd_prot_t *prot)
 {
 	agg_h2d_db_info_t *agg_db_info = &prot->agg_h2d_db_info;
@@ -4118,7 +4126,7 @@ dhd_prot_clearcounts(dhd_pub_t *dhd)
 	prot->tx_h2d_db_cnt = 0;
 }
 
-void
+static void
 dhd_prot_update_rings_size(dhd_prot_t *prot)
 {
 	uint16 max_items;
@@ -4717,13 +4725,7 @@ dhd_prot_reset(dhd_pub_t *dhd)
 #endif /* !DHD_LB_RXP */
 
 #if defined(DHD_LB)
-/* DHD load balancing: deferral of work to another online CPU */
 /* DHD_LB_RXP dispatchers, in dhd_linux.c */
-extern void dhd_lb_rx_napi_dispatch(dhd_pub_t *dhdp);
-extern void dhd_lb_rx_pkt_enqueue(dhd_pub_t *dhdp, void *pkt, int ifidx);
-extern unsigned long dhd_read_lb_rxp(dhd_pub_t *dhdp);
-extern void dhd_rx_emerge_enqueue(dhd_pub_t *dhdp, void *pkt);
-
 #if defined(DHD_LB_RXP)
 extern void * dhd_rx_emerge_dequeue(dhd_pub_t *dhdp);
 /**
@@ -6624,6 +6626,14 @@ BCMFASTPATH(dhd_prot_process_msgbuf_rxcpl)(dhd_pub_t *dhd, int ringtype, uint32 
 	/* must be the first check in this function */
 	(void)dhd_prot_lb_rxp_flow_ctrl(dhd);
 #endif /* DHD_LB_RXP */
+#ifdef DHD_PCIE_RUNTIMEPM
+	/* Set rx_pending_due_to_rpm if device is not in resume state */
+	if (dhdpcie_runtime_bus_wake(dhd, FALSE, dhd_prot_process_msgbuf_rxcpl)) {
+		dhd->rx_pending_due_to_rpm = TRUE;
+		return more;
+	}
+	dhd->rx_pending_due_to_rpm = FALSE;
+#endif /* DHD_PCIE_RUNTIMEPM */
 
 		ring = &prot->d2hring_rx_cpln;
 	item_len = ring->item_len;
@@ -8556,7 +8566,7 @@ dhdmsgbuf_set_hmaptest_windows(dhd_pub_t *dhd)
 /* stop HMAPTEST does not check corerev
  * caller has to ensure corerev check
  */
-int
+static int
 dhdmsgbuf_hmaptest_stop(dhd_pub_t *dhd)
 {
 	uint32 window_config, nwindows, i;
@@ -8591,7 +8601,7 @@ dhdmsgbuf_hmaptest_stop(dhd_pub_t *dhd)
 }
 
 /* HMAP iovar intercept process */
-int
+static int
 dhdmsgbuf_hmap(dhd_pub_t *dhd, pcie_hmap_t *hmap_params, bool set)
 {
 
@@ -8673,7 +8683,7 @@ dhdmsgbuf_hmap(dhd_pub_t *dhd, pcie_hmap_t *hmap_params, bool set)
  * on chips that have HMAP
  * DHD programs hmap window registers with host addresses here.
  */
-int
+static int
 dhdmsgbuf_hmaptest(dhd_pub_t *dhd, pcie_hmaptest_t *hmaptest_params)
 {
 
@@ -9036,7 +9046,7 @@ void dmaxfer_free_dmaaddr(dhd_pub_t *dhd, dhd_dmaxfer_t *dmaxfer)
 }
 
 /** test / loopback */
-int
+static int
 dhd_prepare_schedule_dmaxfer_free(dhd_pub_t *dhdp)
 {
 	dhd_prot_t *prot = dhdp->prot;
@@ -9542,7 +9552,6 @@ dhd_msgbuf_iovar_timeout_dump(dhd_pub_t *dhd)
 	dhd_prot_debug_info_print(dhd);
 }
 
-extern void dhd_validate_pcie_link_cbp_wlbp(dhd_bus_t *bus);
 /**
  * Waits for IOCTL completion message from the dongle, copies this into caller
  * provided parameter 'buf'.
@@ -12079,14 +12088,6 @@ dhd_prot_process_d2h_host_ts_complete(dhd_pub_t *dhd, void* buf)
 
 }
 
-/** called on e.g. flow ring delete */
-void dhd_prot_clean_flow_ring(dhd_pub_t *dhd, void *msgbuf_flow_info)
-{
-	msgbuf_ring_t *flow_ring = (msgbuf_ring_t *)msgbuf_flow_info;
-	dhd_prot_ring_detach(dhd, flow_ring);
-	DHD_INFO(("%s Cleaning up Flow \n", __FUNCTION__));
-}
-
 void dhd_prot_print_flow_ring(dhd_pub_t *dhd, void *msgbuf_flow_info, bool h2d,
 	struct bcmstrbuf *strbuf, const char * fmt)
 {
@@ -12924,8 +12925,10 @@ copy_hang_info_trap(dhd_pub_t *dhd)
 
 	bytes_written = 0;
 	dhd->hang_info_cnt = 0;
+#ifdef DHD_LOG_DUMP
 	get_debug_dump_time(dhd->debug_dump_time_hang_str);
 	copy_debug_dump_time(dhd->debug_dump_time_str, dhd->debug_dump_time_hang_str);
+#endif /* DHD_LOG_DUMP */
 
 	copy_hang_info_head(dhd->hang_info, &tr, VENDOR_SEND_HANG_EXT_INFO_LEN, FALSE,
 			&bytes_written, &dhd->hang_info_cnt, dhd->debug_dump_time_hang_str);
@@ -12933,7 +12936,9 @@ copy_hang_info_trap(dhd_pub_t *dhd)
 	DHD_INFO(("hang info head cnt: %d len: %d data: %s\n",
 		dhd->hang_info_cnt, (int)strlen(dhd->hang_info), dhd->hang_info));
 
+#ifdef DHD_LOG_DUMP
 	clear_debug_dump_time(dhd->debug_dump_time_hang_str);
+#endif /* DHD_LOG_DUMP */
 
 #ifdef DHD_EWPR_VER2
 	/* stack info & trap info are included in etd data */
@@ -12985,8 +12990,10 @@ copy_hang_info_linkdown(dhd_pub_t *dhd)
 
 	dhd->hang_info_cnt = 0;
 
+#ifdef DHD_LOG_DUMP
 	get_debug_dump_time(dhd->debug_dump_time_hang_str);
 	copy_debug_dump_time(dhd->debug_dump_time_str, dhd->debug_dump_time_hang_str);
+#endif /* DHD_LOG_DUMP */
 
 #ifdef BCMPCIE
 	/* hang reason code (0x8808) */
@@ -13014,7 +13021,9 @@ copy_hang_info_linkdown(dhd_pub_t *dhd)
 		dhd->hang_info_cnt++;
 	}
 
+#ifdef DHD_LOG_DUMP
 	clear_debug_dump_time(dhd->debug_dump_time_hang_str);
+#endif /* DHD_LOG_DUMP */
 
 	DHD_INFO(("hang info haed cnt: %d len: %d data: %s\n",
 		dhd->hang_info_cnt, (int)strlen(dhd->hang_info), dhd->hang_info));
@@ -14367,13 +14376,6 @@ dhd_prot_dma_indx_free(dhd_pub_t *dhd)
 	dhd_dma_buf_free(dhd, &prot->d2h_dma_indx_rd_buf);
 }
 
-void
-dhd_msgbuf_delay_post_ts_bufs(dhd_pub_t *dhd)
-{
-	if (dhd->prot->max_tsbufpost > 0)
-		dhd_msgbuf_rxbuf_post_ts_bufs(dhd);
-}
-
 static void
 BCMFASTPATH(dhd_prot_process_fw_timestamp)(dhd_pub_t *dhd, void* buf)
 {
@@ -14667,7 +14669,7 @@ dhd_prot_smmu_fault_dump(dhd_pub_t *dhdp)
 #endif /* DHD_MAP_LOGGING */
 
 #ifdef DHD_FLOW_RING_STATUS_TRACE
-void
+static void
 dhd_dump_bus_flow_ring_status_trace(
 	dhd_bus_t *bus, struct bcmstrbuf *strbuf, dhd_frs_trace_t *frs_trace, int dumpsz, char *str)
 {

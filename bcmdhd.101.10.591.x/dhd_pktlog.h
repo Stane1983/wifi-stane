@@ -1,7 +1,7 @@
 /*
  * DHD debugability packet logging header file
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -323,6 +323,13 @@ extern void dhd_pktlog_dump(void *handle, void *event_info, u8 event);
 extern void dhd_schedule_pktlog_dump(dhd_pub_t *dhdp);
 extern int dhd_pktlog_dump_write_memory(dhd_pub_t *dhdp, const void *user_buf, uint32 size);
 extern int dhd_pktlog_dump_write_file(dhd_pub_t *dhdp);
+extern int
+#ifdef DHD_PKT_LOGGING_DBGRING
+dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf,
+	uint32 *written_bytes);
+#else
+dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 size);
+#endif /* DHD_PKT_LOGGING_DBGRING */
 
 #define DHD_PKTLOG_FATE_INFO_STR_LEN 256
 #define DHD_PKTLOG_FATE_INFO_FORMAT	"BRCM_Packet_Fate"
@@ -332,7 +339,6 @@ extern int dhd_pktlog_dump_write_file(dhd_pub_t *dhdp);
 extern void dhd_pktlog_get_filename(dhd_pub_t *dhdp, char *dump_path, int len);
 extern uint32 dhd_pktlog_get_item_length(dhd_pktlog_ring_info_t *report_ptr);
 extern int dhd_pktlog_get_dump_length(dhd_pub_t *dhdp);
-extern uint32 __dhd_dbg_pkt_hash(uintptr_t pkt, uint32 pktid);
 
 #ifdef DHD_COMPACT_PKT_LOG
 #define CPKT_LOG_BIT_SIZE		22
@@ -341,4 +347,7 @@ extern int dhd_cpkt_log_proc(dhd_pub_t *dhdp, char *buf, int buf_len,
         int bit_offset, int req_pkt_num);
 #endif  /* DHD_COMPACT_PKT_LOG */
 #endif /* DHD_PKT_LOGGING */
+#if defined(DBG_PKT_MON) || defined(DHD_PKT_LOGGING)
+extern uint32 __dhd_dbg_pkt_hash(uintptr_t pkt, uint32 pktid);
+#endif /* DBG_PKT_MON || DHD_PKT_LOGGING */
 #endif /* __DHD_PKTLOG_H_ */

@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -919,6 +919,9 @@ do {									\
 
 #define WL_PM_ENABLE_TIMEOUT 10000
 
+/* max retries for generating non-duplicate macaddr */
+#define WL_RAND_MAC_RETRIES               5u
+
 /* cfg80211 wowlan definitions */
 #define WL_WOWLAN_MAX_PATTERNS			8
 #define WL_WOWLAN_MIN_PATTERN_LEN		1
@@ -1509,6 +1512,13 @@ struct wl_assoc_ielen {
 #define WLC_PMKLIST_V3_SUPPORT(ver) \
 	((ver.wlc_ver_major >= MIN_PMKID_LIST_V3_FW_MAJOR) || \
 	 NEW_PMK_MGR_API_BACK_PORTED(ver))
+
+#define WLC_PMKLIST_V2_API_BACK_PORTED(ver)  \
+	((ver.wlc_ver_major == 4) && (ver.wlc_ver_minor >= 3))
+
+#define WLC_PMKLIST_V2_SUPPORT(ver) \
+	((ver.wlc_ver_major == MIN_PMKID_LIST_V2_FW_MAJOR) || \
+	 WLC_PMKLIST_V2_API_BACK_PORTED(ver))
 
 /* wpa2 pmk list */
 struct wl_pmk_list {
@@ -2381,6 +2391,9 @@ struct bcm_cfg80211 {
 	struct delayed_work	remove_iface_work;
 	/* to track the wiphy lock held context for deleting iface */
 	bool wiphy_lock_held;
+	/* Original btc mode - TODO */
+	uint32 prev_btc_mode;
+	struct delayed_work	coex_dis_work;
 #ifdef BCMDBUS
 	bool bus_resuming;
 #endif /* BCMDBUS */
@@ -2761,6 +2774,10 @@ wl_delete_all_netinfo(struct bcm_cfg80211 *cfg)
 		list_del(&_net_info->list);
 		if (_net_info->wdev) {
 			MFREE(cfg->osh, _net_info->wdev, sizeof(struct wireless_dev));
+			if (_net_info->wdev == cfg->wdev) {
+				/* On primary ndev clean up, mark it as null */
+				cfg->wdev = NULL;
+			}
 		}
 		MFREE(cfg->osh, _net_info, sizeof(struct net_info));
 	}
@@ -3380,6 +3397,9 @@ extern s32 wl_cfg80211_increase_p2p_bw(struct net_device *net, char* buf, int le
 #ifdef P2PLISTEN_AP_SAMECHN
 extern s32 wl_cfg80211_set_p2p_resp_ap_chn(struct net_device *net, s32 enable);
 #endif /* P2PLISTEN_AP_SAMECHN */
+#if defined(WL_NEWCFG_PRIVCMD_SUPPORT)
+extern bool wl_cfg80211_is_p2p_net(struct net_device * dev);
+#endif /* WL_NEWCFG_PRIVCMD_SUPPORT) */
 
 #if defined(OEM_ANDROID)
 /* btcoex functions */
@@ -3574,6 +3594,7 @@ extern void wl_cfg80211_del_p2p_wdev(struct net_device *dev);
 
 #ifdef P2P_LISTEN_OFFLOADING
 extern s32 wl_cfg80211_p2plo_deinit(struct bcm_cfg80211 *cfg);
+extern void wl_cfg80211_cancel_p2plo(struct bcm_cfg80211 *cfg);
 #endif /* P2P_LISTEN_OFFLOADING */
 
 /* Function to flush the FW log buffer content */
@@ -3919,6 +3940,22 @@ struct wl_cp_coex {
 	int ch_5g;
 };
 #endif /* WL_CP_COEX */
+
+#ifdef DIS_COEX_FOR_P2P_DISC
+extern int32 wl_cfg80211_btc_mode(struct bcm_cfg80211 *cfg, bool on);
+#else
+#define wl_cfg80211_btc_mode(cfg, on) do {} while (0)
+#endif /* DIS_COEX_FOR_P2P_DISC */
+
+#ifdef WL_CFG80211_MONITOR
+extern int wl_cfg80211_set_monitor_channel(struct wiphy *wiphy,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0))
+	struct net_device *ndev,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0) */
+	struct cfg80211_chan_def *chandef);
+#endif /* WL_CFG80211_MONITOR */
+extern int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *command);
+
 #ifdef BCMDBUS
 s32
 __wl_cfg80211_up_resume(dhd_pub_t *dhd);

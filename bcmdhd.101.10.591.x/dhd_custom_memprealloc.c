@@ -1,7 +1,7 @@
 /*
  * Platform Dependent file for usage of Preallocted Memory
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -172,7 +172,9 @@ static void *wlan_static_dhd_memdump_ram = NULL;
 static void *wlan_static_dhd_log_dump_buf = NULL;
 static void *wlan_static_dhd_log_dump_buf_ex = NULL;
 
+int dhd_init_wlan_mem(void);
 void dhd_exit_wlan_mem(void);
+void *dhd_wlan_mem_prealloc(int section, unsigned long size);
 
 void
 *dhd_wlan_mem_prealloc(int section, unsigned long size)

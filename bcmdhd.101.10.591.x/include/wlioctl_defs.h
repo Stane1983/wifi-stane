@@ -4,7 +4,7 @@
  *
  * Definitions subject to change without notice.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -23,7 +23,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -645,6 +645,8 @@ typedef uint32 ratespec_t;
 #define MFP_CAPABLE		0x0200
 #define MFP_REQUIRED	0x0400
 #define MFP_SHA256		0x0800 /* a special configuration for STA for WIFI test tool */
+#define SAE_PWE_REQUIRED	0x1000
+#define WSEC_SAE_PWE_REQUIRED(wsec)	((wsec) & SAE_PWE_REQUIRED)
 
 /* WPA authentication mode bitvec */
 #define WPA_AUTH_DISABLED		0x0000	/* Legacy (i.e., non-WPA) */

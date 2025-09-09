@@ -1,7 +1,7 @@
 /*
  * DHD Linux header file - contains private structure definition of the Linux specific layer
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -66,6 +66,7 @@
 #include <dhd_debug.h>
 #include <dhd_linux.h>
 #include <dhd_bus.h>
+#include <fwpkg_utils.h>
 
 #ifdef PCIE_FULL_DONGLE
 #include <bcmmsgbuf.h>
@@ -99,11 +100,13 @@ typedef struct dhd_info {
 	*/
 	dhd_if_t *iflist[DHD_MAX_IFS + DHD_MAX_STATIC_IFS];
 	wifi_adapter_info_t *adapter;			/* adapter information, interrupt, fw path etc. */
+	fwpkg_info_t fwpkg;	/* combined fw package info structure */
 	char fw_path[PATH_MAX];		/* path to firmware image */
 	char nv_path[PATH_MAX];		/* path to nvram vars file */
 	char clm_path[PATH_MAX];	/* path to CLM data */
 	char conf_path[PATH_MAX];	/* path to config vars file */
 	char sig_path[PATH_MAX];	/* path to rtecdc.sig file */
+	char tmp_path[PATH_MAX];	/* path to logstrs vars file */
 #ifdef DHD_UCODE_DOWNLOAD
 	char uc_path[PATH_MAX];	/* path to ucode image */
 #endif /* DHD_UCODE_DOWNLOAD */
@@ -128,6 +131,11 @@ typedef struct dhd_info {
 
 	timer_list_compat_t timer;
 	bool wd_timer_valid;
+#ifdef DHD_PCIE_RUNTIMEPM
+	timer_list_compat_t rpm_timer;
+	bool rpm_timer_valid;
+	tsk_ctl_t	  thr_rpm_ctl;
+#endif /* DHD_PCIE_RUNTIMEPM */
 	struct tasklet_struct tasklet;
 	spinlock_t	sdlock;
 	spinlock_t	txqlock;
@@ -505,7 +513,10 @@ void dhd_lb_tx_handler(unsigned long data);
 #endif /* DHD_LB_TXP */
 
 #if defined(DHD_LB_RXP)
+/* DHD load balancing: deferral of work to another online CPU */
 int dhd_napi_poll(struct napi_struct *napi, int budget);
+extern void dhd_rx_emerge_enqueue(dhd_pub_t *dhdp, void *pkt);
+extern void* dhd_rx_emerge_dequeue(dhd_pub_t *dhdp);
 void dhd_rx_napi_dispatcher_work(struct work_struct * work);
 void dhd_lb_rx_napi_dispatch(dhd_pub_t *dhdp);
 void dhd_lb_rx_pkt_enqueue(dhd_pub_t *dhdp, void *pkt, int ifidx);
@@ -571,5 +582,7 @@ do { \
 #define dhd_wake_lock_timeout(wakeup_source, timeout)	\
 	__pm_wakeup_event(wakeup_source, jiffies_to_msecs(timeout))
 #endif /* CONFIG_HAS_WAKELOCK */
+
+extern int _dhd_set_mac_address(dhd_info_t *dhd, int ifidx, uint8 *addr, bool skip_stop);
 
 #endif /* __DHD_LINUX_PRIV_H__ */

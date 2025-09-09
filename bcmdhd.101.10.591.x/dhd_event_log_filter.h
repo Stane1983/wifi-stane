@@ -1,7 +1,7 @@
 /*
  * Wifi dongle status Filter and Report
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -72,4 +72,6 @@ void dhd_event_log_filter_notify_connect_done(dhd_pub_t *dhdp, uint8 *bssid, int
 #ifdef WLADPS_ENERGY_GAIN
 int dhd_event_log_filter_adps_energy_gain(dhd_pub_t *dhdp);
 #endif /* WLADPS_ENERGY_GAIN */
+extern uint32 dhd_event_log_filter_serialize(dhd_pub_t *dhdp, char *in_buf, uint32 tot_len,
+	int type);
 #endif /* !dhd_event_log_filter_h */

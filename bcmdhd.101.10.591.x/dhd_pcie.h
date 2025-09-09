@@ -1,7 +1,7 @@
 /*
  * Linux DHD Bus Module for PCIE
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -48,7 +48,14 @@
 #include <bcmpcie.h>
 #include <hnd_cons.h>
 #include <fwpkg_utils.h>
+#include <siutils.h>
+#include <pcie_core.h>
 #include <dhd_linux.h>
+
+#ifdef DHD_PCIE_RUNTIMEPM
+#include <linux/mutex.h>
+#include <linux/wait.h>
+#endif /* DHD_PCIE_RUNTIMEPM */
 
 /* defines */
 #define PCIE_SHARED_VERSION		PCIE_SHARED_VERSION_7
@@ -390,6 +397,14 @@ typedef struct dhd_bus {
 	bool	d2h_intr_control;
 	int32 idletime;                 /* Control for activity timeout */
 	bool rpm_enabled;
+#ifdef DHD_PCIE_RUNTIMEPM
+	int32 idlecount;                /* Activity timeout counter */
+	int32 bus_wake;                 /* For wake up the bus */
+	bool runtime_resume_done;       /* For check runtime suspend end */
+	struct mutex pm_lock;            /* Synchronize for system PM & runtime PM */
+	wait_queue_head_t rpm_queue;    /* wait-queue for bus wake up */
+	bool chk_pm;	/* To avoid counting of wake up from Runtime PM */
+#endif /* DHD_PCIE_RUNTIMEPM */
 	uint32 d3_inform_cnt;
 	uint32 d0_inform_cnt;
 	uint32 d0_inform_in_use_cnt;
@@ -540,6 +555,7 @@ typedef struct dhd_bus {
 	uint32 fw_memmap_download_len;	/* Length in bytes of FWS memory-info download */
 
 	char fwsig_filename[DHD_MAX_PATH];		/* Name of FW signature file */
+	bool sig_loaded;
 	char bootloader_filename[DHD_FILENAME_MAX];	/* Name of bootloader image file */
 	uint32 bootloader_addr;		/* Dongle address of bootloader download */
 	bool force_bt_quiesce; /* send bt_quiesce command to BT driver. */
@@ -570,7 +586,6 @@ typedef struct dhd_bus {
 	dhd_pcie_link_state_type_t link_state;
 	bool dar_err_set;
 	uint32 ptm_ctrl_reg;
-	fwpkg_info_t fwpkg;	/* combined fw package info structure */
 	bool lpm_mode;	/* lpm enabled */
 	bool lpm_keep_in_reset; /* during LPM keep in FLR, if FLR force is enabled */
 	bool lpm_mem_kill; /* kill WLAN memories in LPM */
@@ -956,4 +971,14 @@ void dhd_assoc_check_sr(dhd_pub_t *dhd, bool state);
 #endif /* DEVICE_TX_STUCK_DETECT && ASSOC_CHECK_SR */
 
 void dhd_init_bar1_switch_lock(dhd_bus_t *bus);
+
+#ifdef DHD_SSSR_DUMP
+extern void dhdpcie_fill_sssr_reg_info(dhd_pub_t *dhd);
+#endif /* DHD_SSSR_DUMP */
+extern void dhd_prot_clearcounts(dhd_pub_t *dhd);
+extern void dhd_validate_pcie_link_cbp_wlbp(dhd_bus_t *bus);
+
+#ifdef PWRSTATS_SYSFS
+extern uint64 dhdpcie_get_last_suspend_time(dhd_pub_t *dhdp);
+#endif /* PWRSTATS_SYSFS */
 #endif /* dhd_pcie_h */

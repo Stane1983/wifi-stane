@@ -1,7 +1,7 @@
 /*
  * Wifi Virtual Interface implementaion
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -270,7 +270,7 @@ extern s32 wl_cfg80211_change_beacon(struct wiphy *wiphy, struct net_device *dev
 #else
 	struct cfg80211_beacon_data *info
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0) */
-);
+	);
 
 extern s32 wl_get_auth_assoc_status(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	const wl_event_msg_t *e, void *data);
@@ -311,9 +311,14 @@ int wl_cfg80211_set_softap_bw(struct bcm_cfg80211 *cfg, uint32 band, uint32 limi
 extern void wl_cfgvif_delayed_remove_iface_work(struct work_struct *work);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION (3, 8, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION (3, 5, 0))
 extern int wl_chspec_chandef(chanspec_t chanspec,
-	struct cfg80211_chan_def *chandef, struct wiphy *wiphy);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
+	struct cfg80211_chan_def *chandef,
+#else
+	struct chan_info *chaninfo,
+#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)) */
+	struct wiphy *wiphy);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION (3, 8, 0))) */
 extern chanspec_t
 wl_channel_to_chanspec(struct wiphy *wiphy, struct net_device *dev, u32 channel, u32 bw_cap);
@@ -326,4 +331,7 @@ wl_cfg80211_set_channel(struct wiphy *wiphy, struct net_device *dev,
 	enum nl80211_chan_width width
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0) */
 );
+#ifdef PRIMARY_IFACE_ROLE_FIX
+void wl_cfg80211_role_change(struct net_device *dev);
+#endif /* PRIMARY_IFACE_ROLE_FIX */
 #endif /* _wl_cfgvif_h_ */

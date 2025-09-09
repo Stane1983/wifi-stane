@@ -1,7 +1,7 @@
 /*
  * IP Packet Parser Module.
  *
- * Copyright (C) 2024 Synaptics Incorporated. All rights reserved.
+ * Copyright (C) 2025 Synaptics Incorporated. All rights reserved.
  *
  * This software is licensed to you under the terms of the
  * GNU General Public License version 2 (the "GPL") with Broadcom special exception.
@@ -20,7 +20,7 @@
  * SYNAPTICS' TOTAL CUMULATIVE LIABILITY TO ANY PARTY SHALL NOT
  * EXCEED ONE HUNDRED U.S. DOLLARS
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -61,7 +61,9 @@
 #include <dhd_proto.h>
 #include <bcmtcp.h>
 #endif /* DHDTCPACK_SUPPRESS || DHDTCPSYNC_FLOOD_BLK */
-
+#ifdef PROP_TXSTATUS
+#include <dhd_wlfc.h>
+#endif /* PROP_TXSTATUS */
 /* special values */
 /* 802.3 llc/snap header */
 static const uint8 llc_snap_hdr[SNAP_HDR_LEN] = {0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00};
@@ -893,6 +895,16 @@ dhd_tcpack_suppress(dhd_pub_t *dhdp, void *pkt)
 				new_tcp_hdr_len == old_tcp_hdr_len) {
 				ASSERT(memcmp(new_ether_hdr, old_ether_hdr, ETHER_HDR_LEN) == 0);
 				bcopy(new_ip_hdr, old_ip_hdr, new_ip_total_len);
+#ifdef CUSTOMER_HW4
+#ifdef PROP_TXSTATUS
+				if (!dhd_wlfc_is_supported(dhdp))
+				{
+					/* Account for stats here */
+					dhd_txpkt_log_and_dump(dhdp, pkt, NULL);
+				}
+#endif /* PROP_TXSTATUS */
+#endif /* CUSTOMER_HW4 */
+
 				PKTFREE(dhdp->osh, pkt, FALSE);
 				DHD_TRACE(("%s %d: TCP ACK replace %u -> %u\n",
 					__FUNCTION__, __LINE__, old_tcpack_num, new_tcp_ack_num));
@@ -1356,6 +1368,15 @@ dhd_tcpack_hold(dhd_pub_t *dhdp, void *pkt, int ifidx)
 			}
 			PKTFREE(dhdp->osh, oldpkt, TRUE);
 		} else {
+#ifdef CUSTOMER_HW4
+#ifdef PROP_TXSTATUS
+			if (!dhd_wlfc_is_supported(dhdp))
+			{
+				/* Account for stats here */
+				dhd_txpkt_log_and_dump(dhdp, pkt, NULL);
+			}
+#endif /* PROP_TXSTATUS */
+#endif /* CUSTOMER_HW4 */
 			PKTFREE(dhdp->osh, pkt, TRUE);
 		}
 		dhd_os_tcpackunlock(dhdp, flags);
