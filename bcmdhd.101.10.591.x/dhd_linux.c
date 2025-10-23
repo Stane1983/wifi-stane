@@ -87,6 +87,9 @@
 #include <asm/unaligned.h>
 #endif /* KERNEL >= 6.12 */
 #include <dhd_linux_priv.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+#include <net/rps.h>
+#endif /* KERNEL >= 6.9 */
 
 #include <epivers.h>
 #include <bcmutils.h>
