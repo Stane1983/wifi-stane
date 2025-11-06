@@ -132,7 +132,10 @@ static void update_BCNTIM(_adapter *padapter)
 				offset += tmp_len + 2;
 
 			/*DS Parameter Set IE, len=3*/
-			offset += 3;
+			p = rtw_get_ie(pie + _BEACON_IE_OFFSET_, _DSSET_IE_, &tmp_len,
+				pnetwork_mlmeext->IELength - _BEACON_IE_OFFSET_);
+			if (p)
+				offset += tmp_len + 2;
 
 			premainder_ie = pie + offset;
 
