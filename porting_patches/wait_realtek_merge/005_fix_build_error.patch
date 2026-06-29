@@ -1,0 +1,39 @@
+diff --git a/rtl88x2CS/gen_build_bazel.py b/rtl88x2CS/gen_build_bazel.py
+index d2dd33b..055636f 100644
+--- a/rtl88x2CS/gen_build_bazel.py
++++ b/rtl88x2CS/gen_build_bazel.py
+@@ -1,4 +1,5 @@
+ import re
++import textwrap
+ 
+ def parse_variable(file_content, var_name):
+     """parsing specific variables"""
+@@ -164,7 +165,27 @@ def main():
+         'load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")\n\n'
+     )
+ 
+-    build_bazel_content = load_statements + "\n\n".join(filegroup_contents) + "\n\n" + ddk_module_content
++    glob_filegroup_content = \
++        """
++        filegroup(
++            name = "driver_files",
++            srcs = glob(
++                ["**"],
++                exclude = [
++                    "BUILD.bazel",
++                    "**/*.bzl",
++                    ".git",
++                    ".git/**",
++                ],
++            ),
++            visibility = ["//visibility:public"],
++        )
++
++        """
++
++    build_bazel_content = load_statements
++    build_bazel_content += textwrap.dedent(glob_filegroup_content)
++    build_bazel_content += "\n\n".join(filegroup_contents) + "\n\n" + ddk_module_content
+ 
+     if rtkm_module_content:
+         build_bazel_content += "\n\n" + rtkm_module_content

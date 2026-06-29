@@ -38,7 +38,7 @@
 
 /*---------------------------Define Local Constant---------------------------*/
 
-/*8822C DPK ver:0x20 20200106*/
+/*8822C DPK ver:0x21 20240219*/
 
 static u32
 _btc_wait_indirect_reg_ready_8822c(
@@ -1814,7 +1814,7 @@ u8 dpk_reload_8822c(
 
 	i = _dpk_reload_index_8822c(dm);
 
-	if (i != 99) {
+	if (i < DPK_RF18) {
 		RF_DBG(dm, DBG_RF_DPK, "[DPK] DPK reload for RF0x18 0x%x!!\n", dpk_info->dpk_rf18[i]);
 		_dpk_reload_data_8822c(dm, i);
 		dpk_info->dpk_status = dpk_info->dpk_status | BIT(0);
@@ -2069,6 +2069,13 @@ void dpk_track_8822c(
 	for (path = 0; path < DPK_RF_PATH_NUM_8822C; path++) {
 		delta_dpk[path] = dpk_info->thermal_dpk[path] - thermal_value[path];
 
+		if((dm->rfe_type == 8) || (dm->rfe_type == 9)) {
+			if (dpk_info->dpk_band == 0) /*2G*/
+				delta_dpk[path] = delta_dpk[path] - 17;
+			else
+				delta_dpk[path] = delta_dpk[path] - 14;
+		}
+
 		offset[path] = (delta_dpk[path] - dpk_info->thermal_dpk_delta[path]) & 0x7f;
 
 	RF_DBG(dm, DBG_RF_DPK_TRACK,
@@ -2228,11 +2235,11 @@ void dpk_c2h_report_transfer_8822c(
 	}
 
 	idx = _dpk_reload_index_8822c(dm);
-
-	for (i = 0; i < DPK_RF_PATH_NUM_8822C; i++) {
-		dpk_info->thermal_dpk[i] = dpk_c2h_report.therm[idx][i];
-		dpk_info->thermal_dpk_delta[i] = dpk_c2h_report.therm_delta[idx][i];
-	}
+	if (idx < 2)
+		for (i = 0; i < DPK_RF_PATH_NUM_8822C; i++) {
+			dpk_info->thermal_dpk[i] = dpk_c2h_report.therm[idx][i];
+			dpk_info->thermal_dpk_delta[i] = dpk_c2h_report.therm_delta[idx][i];
+		}
 #if 0
 	for (i = 0; i < DPK_C2H_REPORT_LEN_8822C; i++)
 		RF_DBG(dm, DBG_RF_DPK, "[DPK] buf[%d] = 0x%x\n", i, *(buf + i));

@@ -1,0 +1,83 @@
+diff --git a/rtl88x2CS/core/rtw_mlme.c b/rtl88x2CS/core/rtw_mlme.c
+index 99ba3e7..0342dd4 100755
+--- a/rtl88x2CS/core/rtw_mlme.c
++++ b/rtl88x2CS/core/rtw_mlme.c
+@@ -2063,7 +2063,8 @@ u8 _rtw_sitesurvey_condition_check(const char *caller, _adapter *adapter, bool c
+ 	}
+ 
+ 	if (rtw_is_scan_deny(adapter)) {
+-		RTW_INFO("%s ("ADPT_FMT") : scan deny\n", caller, ADPT_ARG(adapter));
++		RTW_INFO("%s ("ADPT_FMT") : scan deny and dpp need sleep 500ms\n", caller, ADPT_ARG(adapter));
++		rtw_msleep_os(500);
+ 		ss_condition = SS_DENY_BY_DRV;
+ 		goto _exit;
+ 	}
+diff --git a/rtl88x2CS/core/rtw_mlme_ext.c b/rtl88x2CS/core/rtw_mlme_ext.c
+index 74aa1d1..a0edf37 100755
+--- a/rtl88x2CS/core/rtw_mlme_ext.c
++++ b/rtl88x2CS/core/rtw_mlme_ext.c
+@@ -15112,7 +15112,7 @@ u8 rtw_ps_annc(_adapter *adapter, bool ps)
+ 					set_channel_bwmode(iface, ch, offset, bw);
+ 				}
+ 				#endif /* CONFIG_MCC_MODE */
+-				issue_nulldata(iface, NULL, ps, 3, 500);
++				issue_nulldata(iface, NULL, ps, 3, 50);
+ 				ps_anc = 1;
+ 			}
+ 		#ifdef CONFIG_RTW_MESH
+diff --git a/rtl88x2CS/core/rtw_roch.c b/rtl88x2CS/core/rtw_roch.c
+index 2674fe6..17487c5 100644
+--- a/rtl88x2CS/core/rtw_roch.c
++++ b/rtl88x2CS/core/rtw_roch.c
+@@ -55,9 +55,7 @@ static int rtw_ro_ch_handler(_adapter *adapter, u8 *buf)
+ 	struct rtw_roch_parm *roch_parm = (struct rtw_roch_parm *)buf;
+ 	struct rtw_wdev_priv *pwdev_priv = adapter_wdev_data(adapter);
+ 	struct roch_info *prochinfo = &adapter->rochinfo;
+-#ifdef CONFIG_CONCURRENT_MODE
+ 	struct mlme_ext_priv *pmlmeext = &adapter->mlmeextpriv;
+-#endif
+ 	u8 ready_on_channel = _FALSE;
+ 	u8 remain_ch;
+ 	unsigned int duration;
+@@ -94,7 +92,7 @@ static int rtw_ro_ch_handler(_adapter *adapter, u8 *buf)
+ 
+ 	#ifdef CONFIG_CONCURRENT_MODE
+ 	if (rtw_mi_check_status(adapter, MI_LINKED) && (0 != rtw_mi_get_union_chan(adapter))) {
+-		if ((remain_ch != rtw_mi_get_union_chan(adapter)) && !check_fwstate(&adapter->mlmepriv, WIFI_ASOC_STATE)) {
++		if ((remain_ch != rtw_mi_get_union_chan(adapter))) {
+ 			if (remain_ch != pmlmeext->cur_channel
+ 				#ifdef RTW_ROCH_BACK_OP
+ 				|| ATOMIC_READ(&pwdev_priv->switch_ch_to) == 1
+@@ -118,6 +116,14 @@ static int rtw_ro_ch_handler(_adapter *adapter, u8 *buf)
+ 	{
+ 		if (remain_ch != rtw_get_oper_ch(adapter))
+ 			ready_on_channel = _TRUE;
++
++		/* if connected and remain_ch is not same as AP's channel
++		 * Note : cur_channel is AP's channel, oper_channel is the channel driver is now on.
++		 */
++		if (check_fwstate(&adapter->mlmepriv, WIFI_ASOC_STATE) &&
++                    remain_ch != pmlmeext->cur_channel)
++			rtw_leave_opch(adapter);
++
+ 	}
+ 
+ 	if (ready_on_channel == _TRUE) {
+@@ -588,4 +594,4 @@ void rtw_init_roch_info(_adapter *padapter)
+ 	rtw_init_timer(&prochinfo->remain_on_ch_timer, padapter, rtw_ro_ch_timer_process, padapter);
+ #endif
+ }
+-#endif /* (defined(CONFIG_P2P) && defined(CONFIG_CONCURRENT_MODE)) || defined(CONFIG_IOCTL_CFG80211) */
+\ No newline at end of file
++#endif /* (defined(CONFIG_P2P) && defined(CONFIG_CONCURRENT_MODE)) || defined(CONFIG_IOCTL_CFG80211) */
+diff --git a/rtl88x2CS/include/rtw_version.h b/rtl88x2CS/include/rtw_version.h
+index e33c776..bef24c6 100755
+--- a/rtl88x2CS/include/rtw_version.h
++++ b/rtl88x2CS/include/rtw_version.h
+@@ -1,2 +1,2 @@
+-#define DRIVERVERSION	"v5.14.0.2-0-g4c549b2.20210914_COEX20211210-2727"
++#define DRIVERVERSION	"v5.14.0.2-0-g4c549b2.20210914_COEX20230106-1700-FiexDPP"
+ #define BTCOEXVERSION	"COEX20211210-2727"
+-- 
+2.42.0
+

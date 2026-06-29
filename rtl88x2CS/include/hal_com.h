@@ -173,11 +173,15 @@ typedef enum _WAKEUP_REASON{
 	RX_DISASSOC						= 0x04,
 	RX_DEAUTH						= 0x08,
 	RX_ARP_REQUEST					= 0x09,
+	RX_EAPREQ_IDENTIFY			= 0x0B,
 	FW_DECISION_DISCONNECT			= 0x10,
 	RX_MAGIC_PKT					= 0x21,
 	RX_UNICAST_PKT					= 0x22,
 	RX_PATTERN_PKT					= 0x23,
 	RTD3_SSID_MATCH					= 0x24,
+	MDNS_RX_QUERY_PKT			= 0x2B,
+	MDNS_PASSTHRU_FORWARD_ALL		= 0x2C,
+	MDNS_PASSTHRU_LIST_MATCH		= 0x2D,
 	RX_REALWOW_V2_WAKEUP_PKT		= 0x30,
 	RX_REALWOW_V2_ACK_LOST			= 0x31,
 	ENABLE_FAIL_DMA_IDLE			= 0x40,
@@ -314,6 +318,12 @@ void dump_chip_info(HAL_VERSION	ChipVersion);
 #define TBTT_PROHIBIT_HOLD_TIME 0x80 /* 4ms, unit is 32us*/
 #define TBTT_PROHIBIT_HOLD_TIME_STOP_BCN 0x64 /* 3.2ms unit is 32us*/
 
+/*  TBTT hold time for 10M */
+#define TBTT_PROHIBIT_HOLD_TIME_10M 0xc8
+
+/*  TBTT hold time for 5M */
+#define TBTT_PROHIBIT_HOLD_TIME_5M 0x190
+
 int hal_spec_init(_adapter *adapter);
 void dump_hal_spec(void *sel, _adapter *adapter);
 
@@ -328,7 +338,7 @@ u8 hal_largest_bw(_adapter *adapter, u8 in_bw);
 
 bool hal_chk_wl_func(_adapter *adapter, u8 func);
 
-void hal_com_config_channel_plan(
+void hal_com_parse_channel_plan(
 		PADAPTER padapter,
 		const char *hw_alpha2,
 		u8 hw_chplan,
@@ -398,6 +408,7 @@ void rtw_sec_read_cam_ent(_adapter *adapter, u8 id, u8 *ctrl, u8 *mac, u8 *key);
 void rtw_sec_write_cam_ent(_adapter *adapter, u8 id, u16 ctrl, u8 *mac, u8 *key);
 void rtw_sec_clr_cam_ent(_adapter *adapter, u8 id);
 bool rtw_sec_read_cam_is_gk(_adapter *adapter, u8 id);
+u8 rtw_sec_search_camid(_adapter *adapter, u8 key_id, u8 is_gtk);
 
 u8 rtw_hal_rcr_check(_adapter *adapter, u32 check_bit);
 
@@ -576,6 +587,16 @@ void update_IOT_info(_adapter *padapter);
 void rtw_set_rts_bw(_adapter *padapter);
 #endif/*CONFIG_RTS_FULL_BW*/
 
+enum ctrl_tx_bcn_reason {
+	CTRL_TX_BCN_BY_OTHERS		= 0,
+	CTRL_TX_BCN_BY_SCAN		= 1,
+	CTRL_TX_BCN_BY_JOIN		= 2,
+	CTRL_TX_BCN_BY_CORRECT_TSF	= 3,
+};
+
+void ResumeTxBeacon_with_reason(_adapter *padapter, enum ctrl_tx_bcn_reason reason);
+void StopTxBeacon_with_reason(_adapter *padapter,enum ctrl_tx_bcn_reason reason);
+
 void ResumeTxBeacon(_adapter *padapter);
 void StopTxBeacon(_adapter *padapter);
 
@@ -671,6 +692,7 @@ void rtw_dump_fifo(void *sel, _adapter *adapter, u8 fifo_sel, u32 fifo_addr, u32
 s32 rtw_hal_set_default_port_id_cmd(_adapter *adapter, u8 mac_id);
 s32 rtw_set_default_port_id(_adapter *adapter);
 s32 rtw_set_ps_rsvd_page(_adapter *adapter);
+struct _ADAPTER* rtw_select_and_set_dftport(struct _ADAPTER *adapter, bool is_connected);
 
 #define get_dft_portid(adapter) (adapter_to_dvobj(adapter)->dft.port_id)
 #define get_dft_macid(adapter) (adapter_to_dvobj(adapter)->dft.mac_id)
@@ -753,6 +775,10 @@ static inline void rtw_leave_protsel_macsleep(_adapter *padapter) {}
 
 #ifndef RTW_HALMAC
 void rtw_hal_init_sifs_backup(_adapter *adapter);
+#endif
+
+#ifdef DBG_FW_POLL
+s32 rtw_hal_h2c_test(_adapter *adapter);
 #endif
 
 #endif /* __HAL_COMMON_H__ */

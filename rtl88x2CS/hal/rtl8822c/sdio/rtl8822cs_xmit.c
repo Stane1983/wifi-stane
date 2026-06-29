@@ -158,7 +158,7 @@ static s32 xmit_xmitframes(PADAPTER adapter, struct xmit_priv *pxmitpriv)
 	u32 k = 0;
 	u8 max_agg_num;
 	struct hw_xmit *hwxmits, *phwxmit;
-	u8 no_res, idx, hwentry;
+	u8 idx, hwentry;
 	_irqL irql;
 	struct tx_servq *ptxservq;
 	_list *sta_plist, *sta_phead, *frame_plist, *frame_phead;
@@ -175,7 +175,6 @@ static s32 xmit_xmitframes(PADAPTER adapter, struct xmit_priv *pxmitpriv)
 #endif
 
 	err = 0;
-	no_res = _FALSE;
 	hwxmits = pxmitpriv->hwxmits;
 	hwentry = pxmitpriv->hwxmit_entry;
 	ptxservq = NULL;
@@ -187,6 +186,11 @@ static s32 xmit_xmitframes(PADAPTER adapter, struct xmit_priv *pxmitpriv)
 	rtw_halmac_get_oqt_size(adapter_to_dvobj(adapter), &max_agg_num);
 	rtw_hal_get_def_var(adapter, HAL_DEF_TX_PAGE_SIZE, &page_size);
 	desc_size = rtl8822c_get_tx_desc_size(adapter);
+
+	/* Limit max tx agg num to match with tx_allow rule */
+	if (max_agg_num > 31) {
+		max_agg_num = 31;
+	}
 
 #ifdef CONFIG_RTW_MGMT_QUEUE 
 	/* dump management frame directly */
@@ -307,16 +311,22 @@ static s32 xmit_xmitframes(PADAPTER adapter, struct xmit_priv *pxmitpriv)
 					k = 0;
 				}
 
-				/* ok to send, remove frame from queue */
 #ifdef CONFIG_AP_MODE
 				if (MLME_IS_AP(adapter) || MLME_IS_MESH(adapter)) {
 					if ((pxmitframe->attrib.psta->state & WIFI_SLEEP_STATE)
 					    && (pxmitframe->attrib.triggered == 0)) {
-						RTW_INFO("%s: one not triggered pkt in queue when this STA sleep, break and goto next sta\n", __FUNCTION__);
+						RTW_INFO("%s: one not triggered pkt in queue when this STA sleep,"
+							" move to sleep_q and goto next sta\n", __func__);
+						if (xmitframe_enqueue_for_sleeping_sta(adapter, pxmitframe) == _TRUE) {
+							ptxservq->qcnt--;
+							phwxmit->accnt--;
+						}
 						break;
 					}
 				}
 #endif
+
+				/* ok to send, remove frame from queue */
 				rtw_list_delete(&pxmitframe->list);
 				ptxservq->qcnt--;
 				phwxmit->accnt--;
@@ -501,7 +511,6 @@ thread_return rtl8822cs_xmit_thread(thread_context context)
 {
 	s32 ret;
 	PADAPTER adapter;
-	struct xmit_priv *pxmitpriv;
 	u8 thread_name[20] = {0};
 #ifdef RTW_XMIT_THREAD_HIGH_PRIORITY_AGG
 #ifdef PLATFORM_LINUX
@@ -517,7 +526,6 @@ thread_return rtl8822cs_xmit_thread(thread_context context)
 
 	ret = _SUCCESS;
 	adapter = (PADAPTER)context;
-	pxmitpriv = &adapter->xmitpriv;
 
 	rtw_sprintf(thread_name, 20, "RTWHALXT-"ADPT_FMT, ADPT_ARG(adapter));
 	thread_enter(thread_name);
@@ -547,7 +555,6 @@ thread_return rtl8822cs_xmit_thread(thread_context context)
 s32 rtl8822cs_mgnt_xmit(PADAPTER adapter, struct xmit_frame *pmgntframe)
 {
 	s32 ret = _SUCCESS;
-	struct dvobj_priv *pdvobjpriv;
 	struct xmit_priv *pxmitpriv;
 	struct pkt_attrib *pattrib;
 	struct xmit_buf *pxmitbuf;
@@ -555,8 +562,6 @@ s32 rtl8822cs_mgnt_xmit(PADAPTER adapter, struct xmit_frame *pmgntframe)
 	u16 subtype;
 	u8 *pframe;
 
-
-	pdvobjpriv = adapter_to_dvobj(adapter);
 	pxmitpriv = &adapter->xmitpriv;
 	pattrib = &pmgntframe->attrib;
 	pxmitbuf = pmgntframe->pxmitbuf;
@@ -608,6 +613,7 @@ s32 rtl8822cs_hal_mgmt_xmit_enqueue(PADAPTER adapter, struct xmit_frame *pxmitfr
 
 	ret = rtw_mgmt_xmitframe_enqueue(adapter, pxmitframe);
 	if (ret != _SUCCESS) {
+		rtw_free_xmitbuf(pxmitpriv, pxmitframe->pxmitbuf);
 		rtw_free_xmitframe(pxmitpriv, pxmitframe);
 		pxmitpriv->tx_drop++;
 		return _FALSE;

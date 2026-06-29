@@ -46,6 +46,7 @@ enum h2c_cmd {
 #endif /* CONFIG_MCC_MODE */
 	H2C_CHNL_SWITCH_OPER_OFFLOAD = 0x1C,
 	H2C_SINGLE_CHANNELSWITCH_V2 = 0x1D,
+	H2C_TX_PAUSE_DRV_INFO = 0x1E,
 
 	/* PoweSave Class: 001 */
 	H2C_SET_PWR_MODE = 0x20,
@@ -120,6 +121,10 @@ enum h2c_cmd {
 #ifdef CONFIG_WOW_KEEP_ALIVE_PATTERN
 	H2C_UDP_KEEPALIVE = 0x90,
 #endif /*CONFIG_WOW_KEEP_ALIVE_PATTERN*/
+	H2C_AOAC_RSVDPAGE4 = 0x91,
+#ifdef CONFIG_MDNS_OFFLOAD
+	H2C_MDNS_OFFLOAD = 0x92,
+#endif
 #ifdef CONFIG_FW_HANDLE_TXBCN
 	H2C_FW_BCN_OFFLOAD = 0xBA,
 #endif
@@ -164,8 +169,8 @@ enum h2c_cmd {
 #define H2C_MACID_CFG_LEN		7
 #define H2C_BTMP_OPER_LEN			5
 #define H2C_WOWLAN_LEN			7
-#define H2C_REMOTE_WAKE_CTRL_LEN	3
-#define H2C_AOAC_GLOBAL_INFO_LEN	2
+#define H2C_REMOTE_WAKE_CTRL_LEN	5
+#define H2C_AOAC_GLOBAL_INFO_LEN	4
 #define H2C_AOAC_RSVDPAGE_LOC_LEN	7
 #define H2C_SCAN_OFFLOAD_CTRL_LEN	4
 #define H2C_BT_FW_PATCH_LEN			6
@@ -178,6 +183,9 @@ enum h2c_cmd {
 #define H2C_P2P_OFFLOAD_LEN	3
 #ifdef CONFIG_PNO_SUPPORT
 #define H2C_NLO_INFO_LEN	2
+#endif
+#ifdef CONFIG_MDNS_OFFLOAD
+#define H2C_MDNS_OFFLOAD_LEN	5
 #endif
 #ifdef CONFIG_MCC_MODE
 	#define H2C_MCC_CTRL_LEN			7
@@ -192,7 +200,7 @@ enum h2c_cmd {
 	#define H2C_MCC_IQK_PARAM_LEN		7
 #endif /* CONFIG_MCC_MODE */
 #ifdef CONFIG_LPS_PG
-#ifdef CONFIG_RTL8822C
+#if defined(CONFIG_RTL8822C) || defined(CONFIG_RTL8822E)
 	#define H2C_LPS_PG_INFO_LEN		4
 #else
 	#define H2C_LPS_PG_INFO_LEN		2
@@ -283,7 +291,7 @@ enum h2c_cmd {
 #define GET_H2CCMD_MSRRPT_PARM_MIRACAST_SINK(__pH2CCmd)	LE_BITS_TO_1BYTE(((u8 *)(__pH2CCmd)), 3, 1)
 #define GET_H2CCMD_MSRRPT_PARM_ROLE(__pH2CCmd)			LE_BITS_TO_1BYTE(((u8 *)(__pH2CCmd)), 4, 4)
 
-#ifdef CONFIG_WAR_OFFLOAD
+#if defined(CONFIG_WAR_OFFLOAD) || defined(CONFIG_MDNS_OFFLOAD)
 #define SET_IPHDR_VERSION(__pHeader, __Value)				WriteLE1Byte(((u8 *)(__pHeader)) + 0, __Value)
 #define SET_IPHDR_DSCP(__pHeader, __Value)					WriteLE1Byte(((u8 *)(__pHeader)) + 1, __Value)
 #define SET_IPHDR_TOTAL_LEN(__pHeader, __Value)			WriteLE2Byte(((u8 *)(__pHeader)) + 2, __Value)
@@ -304,7 +312,7 @@ enum h2c_cmd {
 
 #endif /* CONFIG_WAR_OFFLOAD */
 
-#ifdef CONFIG_OFFLOAD_MDNS_V6
+#if defined(CONFIG_OFFLOAD_MDNS_V6) || defined(CONFIG_MDNS_OFFLOAD)
 #define SET_IPHDRV6_VERSION(__pHeader, __Value)                     SET_BITS_TO_LE_1BYTE(__pHeader, 4, 4, __Value)
 #define SET_IPHDRV6_TRAFFIC_CLASS(__pHeader, __Value)               SET_BITS_TO_LE_2BYTE(__pHeader, 4, 8, __Value)
 #define SET_IPHDRV6_FLOW_LABEL(__pHeader, __Value)                  SET_BITS_TO_LE_4BYTE(__pHeader, 12, 20, __Value)
@@ -377,7 +385,7 @@ s32 rtw_hal_set_FwMediaStatusRpt_range_cmd(_adapter *adapter, bool opmode, bool 
 /*data6*/
 #define SET_H2CCMD_UDP_KEEP_ALIVE_RETRY_LIMIT(__pH2CCmd, __Value) SET_BITS_TO_LE_1BYTE(__pH2CCmd+6, 0, 8, __Value);
 #endif /*CONFIG_WOW_KEEP_ALIVE_PATTERN*/
-#ifdef CONFIG_RTW_CUSTOMER_STR
+
 #define RTW_CUSTOMER_STR_LEN 16
 #define RTW_CUSTOMER_STR_FMT "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x"
 #define RTW_CUSTOMER_STR_ARG(x) ((u8 *)(x))[0], ((u8 *)(x))[1], ((u8 *)(x))[2], ((u8 *)(x))[3], ((u8 *)(x))[4], ((u8 *)(x))[5], \
@@ -387,6 +395,8 @@ s32 rtw_hal_set_FwMediaStatusRpt_range_cmd(_adapter *adapter, bool opmode, bool 
 /* H2C_CUSTOMER_STR_REQ  0x06 */
 #define H2C_CUSTOMER_STR_REQ_LEN 1
 #define SET_H2CCMD_CUSTOMER_STR_REQ_EN(__pH2CCmd, __Value)	SET_BITS_TO_LE_1BYTE(((u8 *)(__pH2CCmd)), 0, 1, (__Value))
+
+#ifdef CONFIG_RTW_CUSTOMER_STR
 s32 rtw_hal_h2c_customer_str_req(_adapter *adapter);
 s32 rtw_hal_customer_str_read(_adapter *adapter, u8 *cs);
 
@@ -423,6 +433,15 @@ s32 rtw_hal_customer_str_write(_adapter *adapter, const u8 *cs);
 /* _Probersp_RsvdPage 0x0a */
 #define SET_H2CCMD_AP_WOWLAN_RSVDPAGE_LOC_ProbeRsp(__pH2CCmd, __Value)	SET_BITS_TO_LE_1BYTE(__pH2CCmd, 0, 8, __Value)
 /* _Probersp_RsvdPage 0x13 */
+
+#ifdef CONFIG_TX_PAUSE_FW_CTRL
+/* H2C_TX_PAUSE_DRV_INFO 0x1E */
+#define H2C_TX_PAUSE_DRV_INFO_LEN 2
+#define SET_H2CCMD_TX_PAUSE_DRV_INFO_VALUE(__pH2CCmd, __Value)	SET_BITS_TO_LE_1BYTE(((u8 *)(__pH2CCmd)), 0, 8, (__Value))
+#define SET_H2CCMD_TX_PAUSE_DRV_INFO_MASK(__pH2CCmd, __Value)	SET_BITS_TO_LE_1BYTE(((u8 *)(__pH2CCmd)) + 1, 0, 8, (__Value))
+
+s32 rtw_hal_h2c_tx_pause_ctrl(_adapter *adapter, u8 val);
+#endif
 
 #define SET_H2CCMD_PWRMODE_PARM_MODE(__pH2CCmd, __Value)				SET_BITS_TO_LE_1BYTE(__pH2CCmd, 0, 8, __Value)
 #define SET_H2CCMD_PWRMODE_PARM_RLBM(__pH2CCmd, __Value)				SET_BITS_TO_LE_1BYTE((__pH2CCmd)+1, 0, 4, __Value)
@@ -607,6 +626,7 @@ s32 rtw_hal_customer_str_write(_adapter *adapter, const u8 *cs);
 #define SET_H2CCMD_WOWLAN_GPIO_INPUT_EN(__pH2CCmd, __Value)		SET_BITS_TO_LE_1BYTE((__pH2CCmd)+4, 5, 1, __Value)
 #define SET_H2CCMD_WOWLAN_DEV2HST_EN(__pH2CCmd, __Value) 	SET_BITS_TO_LE_1BYTE((__pH2CCmd)+4, 7, 1, __Value)
 #define SET_H2CCMD_WOWLAN_TIME_FOR_UPHY_DISABLE(__pH2CCmd, __Value) SET_BITS_TO_LE_1BYTE((__pH2CCmd)+5, 0, 8, __Value)
+#define SET_H2CCMD_WOWLAN_DISABLE_INBAND(__pH2CCmd, __Value) 	SET_BITS_TO_LE_1BYTE((__pH2CCmd)+6, 0, 1, __Value)
 #define SET_H2CCMD_WOWLAN_RISE_HST2DEV(__pH2CCmd, __Value) 	SET_BITS_TO_LE_1BYTE((__pH2CCmd)+6, 2, 1, __Value)
 
 /* _REMOTE_WAKEUP_CMD_0x81 */
@@ -622,11 +642,22 @@ s32 rtw_hal_customer_str_write(_adapter *adapter, const u8 *cs);
 	SET_BITS_TO_LE_1BYTE((__pH2CCmd)+1, 3, 1, __Value)
 
 #define SET_H2CCMD_REMOTE_WAKE_CTRL_ARP_ACTION(__pH2CCmd, __Value)	SET_BITS_TO_LE_1BYTE((__pH2CCmd)+2, 0, 1, __Value)
+#define SET_H2CCMD_REMOTE_WAKE_CTRL_TIM_PARSER_EN(__pH2CCmd, __Value)	SET_BITS_TO_LE_1BYTE((__pH2CCmd)+2, 2, 1, __Value)
 #define SET_H2CCMD_REMOTE_WAKE_CTRL_FW_PARSING_UNTIL_WAKEUP(__pH2CCmd, __Value)	SET_BITS_TO_LE_1BYTE((__pH2CCmd)+2, 4, 1, __Value)
+#define SET_H2CCMD_REMOTE_WAKE_CTRL_CSA_PARSER_EN(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd)+4, 3, 1, __Value)
 
 /* AOAC_GLOBAL_INFO_0x82 */
 #define SET_H2CCMD_AOAC_GLOBAL_INFO_PAIRWISE_ENC_ALG(__pH2CCmd, __Value)	SET_BITS_TO_LE_1BYTE(__pH2CCmd, 0, 8, __Value)
 #define SET_H2CCMD_AOAC_GLOBAL_INFO_GROUP_ENC_ALG(__pH2CCmd, __Value)		SET_BITS_TO_LE_1BYTE((__pH2CCmd)+1, 0, 8, __Value)
+#ifdef CONFIG_IEEE80211W
+#define SET_H2CCMD_AOAC_GLOBAL_INFO_11W_GROUP_ENC_ALG(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd)+2, 0, 8, __Value)
+#endif
+#ifdef CONFIG_GTK_OL
+#define SET_H2CCMD_AOAC_GLOBAL_INFO_IEEE_AKM_SUITE_TYPE(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd)+3, 0, 8, __Value)
+#endif
 
 /* AOAC_RSVDPAGE_LOC_0x83 */
 #define SET_H2CCMD_AOAC_RSVDPAGE_LOC_REMOTE_WAKE_CTRL_INFO(__pH2CCmd, __Value)	SET_BITS_TO_LE_1BYTE((__pH2CCmd), 0, 8, __Value)
@@ -648,6 +679,37 @@ s32 rtw_hal_customer_str_write(_adapter *adapter, const u8 *cs);
 #endif
 #define SET_H2CCMD_AOAC_RSVDPAGE_LOC_AOAC_REPORT(__pH2CCmd, __Value) \
 	SET_BITS_TO_LE_1BYTE((__pH2CCmd) + 1, 0, 8, __Value)
+#ifdef CONFIG_IEEE80211W
+#define SET_H2CCMD_AOAC_RSVDPAGE_LOC_IEEE80211W_INFO(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd) + 4, 0, 8, __Value)
+#define SET_H2CCMD_AOAC_RSVDPAGE_LOC_SA_QUERY(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd) + 5, 0, 8, __Value)
+#endif
+#ifdef CONFIG_GTK_OL
+#define SET_H2CCMD_AOAC_RSVDPAGE_LOC_GTK_INFO_V2(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd) + 6, 0, 8, __Value)
+#endif
+
+/* AOAC_RSVDPAGE_4_0x91 */
+#define SET_H2CCMD_AOAC_RSVDPAGE_LOC_CHSET(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd), 0, 8, __Value)
+
+#ifdef CONFIG_MDNS_OFFLOAD
+#define SET_H2CCMD_MDNS_OFFLOAD_EN(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd), 0, 1, __Value)
+#define SET_H2CCMD_MDNS_OFFLOAD_STATE(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd), 1, 1, __Value)
+#define SET_H2CCMD_MDNS_OFFLOAD_PASSTHRU_BEHAVIOR(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd), 2, 2, __Value)
+#define SET_H2CCMD_MDNS_OFFLOAD_LOC_IPV4_HEADER(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd) + 1, 0, 8, __Value)
+#define SET_H2CCMD_MDNS_OFFLOAD_LOC_IPV6_HEADER(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd) + 2, 0, 8, __Value)
+#define SET_H2CCMD_MDNS_OFFLOAD_LOC_MDNS_PROTOCOL_DATA(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd) + 3, 0, 8, __Value)
+#define SET_H2CCMD_MDNS_OFFLOAD_LOC_PASSTHRU_LIST(__pH2CCmd, __Value) \
+	SET_BITS_TO_LE_1BYTE((__pH2CCmd) + 4, 0, 8, __Value)
+#endif
 
 #ifdef CONFIG_PNO_SUPPORT
 /* D0_Scan_Offload_Info_0x86 */
@@ -689,7 +751,8 @@ s32 rtw_hal_customer_str_write(_adapter *adapter, const u8 *cs);
 #define SET_H2CCMD_LPSPG_IQK_INFO_LOC(__pH2CCmd, __Value)	SET_BITS_TO_LE_1BYTE((__pH2CCmd) + 3, 0, 8, __Value)/*Loc_IQK_result*/
 #endif
 
-#if defined(CONFIG_RTL8822C) && defined(CONFIG_SUPPORT_DYNAMIC_TXPWR)
+#if (defined(CONFIG_RTL8822C) || defined(CONFIG_RTL8822E)) \
+	&& defined(CONFIG_SUPPORT_DYNAMIC_TXPWR)
 #define SET_H2CCMD_FW_CRC5_SEARCH_EN(cmd, v)	\
 	SET_BITS_TO_LE_1BYTE((cmd), 0, 1, (v));
 #define SET_H2CCMD_FW_CRC5_SEARCH_MACID(cmd, v)	\
@@ -732,11 +795,11 @@ s32 rtw_hal_customer_str_write(_adapter *adapter, const u8 *cs);
 #endif /*DBG_FW_DEBUG_MSG_PKT*/
 
 #ifdef DBG_RSVD_PAGE_CFG
-#define RSVD_PAGE_CFG(ops, v1, v2, v3)	\
-	RTW_INFO("=== [RSVD][%s]-NeedPage:%d, TotalPageNum:%d TotalPacketLen:%d ===\n",	\
-		ops, v1, v2, v3)
+#define RSVD_PAGE_CFG(ops, v1, v2)	\
+	RTW_INFO("=== [RSVD][%s]-NeedPage:%d, TotalPageNum:%d ===\n",	\
+		ops, v1, v2)
 #else
-#define RSVD_PAGE_CFG(ops, v1, v2, v3) do {} while (0)
+#define RSVD_PAGE_CFG(ops, v1, v2) do {} while (0)
 #endif
 
 /* ---------------------------------------------------------------------------------------------------------
@@ -758,9 +821,11 @@ typedef struct _RSVDPAGE_LOC {
 	u8 LocNetList;
 #ifdef CONFIG_GTK_OL
 	u8 LocGTKEXTMEM;
+	u8 loc_gtk_info_v2;
 #endif /* CONFIG_GTK_OL */
 	u8 LocNDPInfo;
 	u8 LocAOACReport;
+	u8 loc_channel_set;
 #ifdef CONFIG_PNO_SUPPORT
 	u8 LocPNOInfo;
 	u8 LocScanInfo;
@@ -778,7 +843,12 @@ typedef struct _RSVDPAGE_LOC {
 	u8 LocMdnsv6;
 #endif /* defined(CONFIG_OFFLOAD_MDNS_V4) || defined(CONFIG_OFFLOAD_MDNS_V6) */
 #endif /* CONFIG_WAR_OFFLOAD */
-
+#ifdef CONFIG_MDNS_OFFLOAD
+	u8 loc_ipv4_header;
+	u8 loc_ipv6_header;
+	u8 loc_mdns_protocol_data;
+	u8 loc_mdns_passthru_list;
+#endif
 #endif /* CONFIG_WOWLAN	 */
 	u8 LocApOffloadBCN;
 #ifdef CONFIG_P2P_WOWLAN
@@ -791,6 +861,10 @@ typedef struct _RSVDPAGE_LOC {
 #ifdef DBG_FW_DEBUG_MSG_PKT
 	u8 loc_fw_dbg_msg_pkt;
 #endif /*DBG_FW_DEBUG_MSG_PKT*/
+#ifdef CONFIG_IEEE80211W
+	u8 loc_ieee80211w_info;
+	u8 loc_sa_query;
+#endif
 } RSVDPAGE_LOC, *PRSVDPAGE_LOC;
 
 struct rsvd_page_cache_t {

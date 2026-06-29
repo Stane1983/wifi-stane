@@ -351,7 +351,7 @@ static void Hal_EfuseParseBTCoexistInfo(PADAPTER adapter, u8 *map, u8 mapvalid)
 
 static void Hal_EfuseParseChnlPlan(PADAPTER adapter, u8 *map, u8 autoloadfail)
 {
-	hal_com_config_channel_plan(
+	hal_com_parse_channel_plan(
 		adapter,
 		map ? &map[EEPROM_COUNTRY_CODE_8822C] : NULL,
 		map ? map[EEPROM_ChannelPlan_8822C] : 0xFF,
@@ -970,7 +970,7 @@ static void set_beacon_related_registers(PADAPTER adapter)
 	PHAL_DATA_TYPE hal = GET_HAL_DATA(adapter);
 	struct mlme_ext_priv *pmlmeext = &adapter->mlmeextpriv;
 	struct mlme_ext_info *pmlmeinfo = &pmlmeext->mlmext_info;
-	u32 bcn_ctrl_reg, bcn_interval_reg;
+	/* u32 bcn_ctrl_reg, bcn_interval_reg; */
 
 
 	/* reset TSF, enable update TSF, correcting TSF On Beacon */
@@ -986,10 +986,12 @@ static void set_beacon_related_registers(PADAPTER adapter)
 	 * REG_BCN_CTRL (0x550)
 	 */
 
+#if 0
 	bcn_ctrl_reg = REG_BCN_CTRL_8822C;
 #ifdef CONFIG_CONCURRENT_MODE
 	if (adapter->hw_port == HW_PORT1)
 		bcn_ctrl_reg = REG_BCN_CTRL_CLINT0_8822C;
+#endif
 #endif
 
 	/*
@@ -1622,11 +1624,6 @@ static void hw_var_set_mlme_disconnect(PADAPTER adapter)
 
 		/* disable update TSF1(CLINT0) */
 		rtw_iface_disable_tsf_update(adapter);
-
-		/* disable Port1's beacon function */
-		val8 = rtw_read8(adapter, REG_BCN_CTRL_CLINT0_8822C);
-		val8 &= ~BIT_CLI0_EN_BCN_FUNCTION_8822C;
-		rtw_write8(adapter, REG_BCN_CTRL_CLINT0_8822C, val8);
 	} else
 #endif
 	{
@@ -1652,18 +1649,10 @@ static void hw_var_set_mlme_disconnect(PADAPTER adapter)
 
 static void hw_var_set_mlme_sitesurvey(PADAPTER adapter, u8 enable)
 {
-	struct dvobj_priv *dvobj;
-	PHAL_DATA_TYPE hal;
-	struct mlme_priv *pmlmepriv;
 	PADAPTER iface;
 	u32 reg_bcn_ctl;
 	u16 value_rxfltmap2;
 	u8 val8, i;
-
-
-	dvobj = adapter_to_dvobj(adapter);
-	hal = GET_HAL_DATA(adapter);
-	pmlmepriv = &adapter->mlmepriv;
 
 #ifdef CONFIG_FIND_BEST_CHANNEL
 	/* Receive all data frames */
@@ -1684,7 +1673,7 @@ static void hw_var_set_mlme_sitesurvey(PADAPTER adapter, u8 enable)
 		rtw_hal_rcr_set_chk_bssid(adapter, MLME_SCAN_ENTER);
 
 		if (rtw_mi_get_ap_num(adapter) || rtw_mi_get_mesh_num(adapter))
-			StopTxBeacon(adapter);
+			StopTxBeacon_with_reason(adapter, CTRL_TX_BCN_BY_SCAN);
 	} else {
 		/* sitesurvey done
 		 * 1. enable rx data frame
@@ -1699,7 +1688,7 @@ static void hw_var_set_mlme_sitesurvey(PADAPTER adapter, u8 enable)
 
 		#ifdef CONFIG_AP_MODE
 		if (rtw_mi_get_ap_num(adapter) || rtw_mi_get_mesh_num(adapter)) {
-			ResumeTxBeacon(adapter);
+			ResumeTxBeacon_with_reason(adapter, CTRL_TX_BCN_BY_SCAN);
 			rtw_mi_tx_beacon_hdl(adapter);
 		}
 		#endif
@@ -1724,7 +1713,7 @@ static void hw_var_set_mlme_join(PADAPTER adapter, u8 type)
 	if (type == 0) {
 		/* prepare to join */
 		if (rtw_mi_get_ap_num(adapter) || rtw_mi_get_mesh_num(adapter))
-			StopTxBeacon(adapter);
+			StopTxBeacon_with_reason(adapter, CTRL_TX_BCN_BY_JOIN);
 
 		/* enable to rx data frame.Accept all data frame */
 		rtw_write16(adapter, REG_RXFLTMAP2_8822C, 0xFFFF);
@@ -1755,7 +1744,7 @@ static void hw_var_set_mlme_join(PADAPTER adapter, u8 type)
 		rtw_iface_disable_tsf_update(adapter);
 
 		if (rtw_mi_get_ap_num(adapter) || rtw_mi_get_mesh_num(adapter)) {
-			ResumeTxBeacon(adapter);
+			ResumeTxBeacon_with_reason(adapter, CTRL_TX_BCN_BY_JOIN);
 
 			/* reset TSF 1/2 after resume_tx_beacon */
 			val8 = BIT_TSFTR_RST_8822C | BIT_TSFTR_CLI0_RST_8822C;
@@ -1774,7 +1763,7 @@ static void hw_var_set_mlme_join(PADAPTER adapter, u8 type)
 		}
 
 		if (rtw_mi_get_ap_num(adapter) || rtw_mi_get_mesh_num(adapter)) {
-			ResumeTxBeacon(adapter);
+			ResumeTxBeacon_with_reason(adapter, CTRL_TX_BCN_BY_JOIN);
 
 			/* reset TSF 1/2 after resume_tx_beacon */
 			rtw_write8(adapter, REG_DUAL_TSF_RST_8822C, BIT_TSFTR_RST_8822C | BIT_TSFTR_CLI0_RST_8822C);
@@ -2150,13 +2139,12 @@ static void hw_port_reconfig(_adapter * if_ap, _adapter *if_port0)
 		rtw_hal_set_hwreg(if_port0, HW_VAR_BSSID, bssid);
 		#ifdef CONFIG_FW_MULTI_PORT_SUPPORT
 		rtw_set_default_port_id(if_port0);
+		#ifdef CONFIG_BT_COEXIST
+		if (GET_HAL_DATA(if_port0)->EEPROMBluetoothCoexist == _TRUE)
+			rtw_hal_set_wifi_btc_port_id_cmd(if_port0);
+		#endif
 		#endif
 	}
-
-#if defined(CONFIG_BT_COEXIST) && defined(CONFIG_FW_MULTI_PORT_SUPPORT)
-	if (GET_HAL_DATA(if_port0)->EEPROMBluetoothCoexist == _TRUE)
-		rtw_hal_set_wifi_btc_port_id_cmd(if_port0);
-#endif
 
 	if_ap->hw_port =HW_PORT0;
 	/* port mac addr switch to adapter mac addr */
@@ -2851,14 +2839,10 @@ void rtl8822c_read_wmmedca_reg(PADAPTER adapter, u16 *vo_params, u16 *vi_params,
 
 void rtl8822c_gethwreg(PADAPTER adapter, u8 variable, u8 *val)
 {
-	PHAL_DATA_TYPE hal;
 	u8 val8;
 	u16 val16;
 	u32 val32;
 	u64 val64;
-
-
-	hal = GET_HAL_DATA(adapter);
 
 	switch (variable) {
 /*
@@ -3080,11 +3064,8 @@ void rtl8822c_gethwreg(PADAPTER adapter, u8 variable, u8 *val)
  */
 u8 rtl8822c_sethaldefvar(PADAPTER adapter, HAL_DEF_VARIABLE variable, void *pval)
 {
-	PHAL_DATA_TYPE hal;
 	u8 bResult;
 
-
-	hal = GET_HAL_DATA(adapter);
 	bResult = _SUCCESS;
 
 	switch (variable) {
@@ -3159,15 +3140,10 @@ void rtl8822c_ra_info_dump(_adapter *padapter, void *sel)
  */
 u8 rtl8822c_gethaldefvar(PADAPTER adapter, HAL_DEF_VARIABLE variable, void *pval)
 {
-	PHAL_DATA_TYPE hal;
-	struct dvobj_priv *d;
 	u8 bResult;
 	u8 val8 = 0;
 	u32 val32 = 0;
 
-
-	d = adapter_to_dvobj(adapter);
-	hal = GET_HAL_DATA(adapter);
 	bResult = _SUCCESS;
 
 	switch (variable) {

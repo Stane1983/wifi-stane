@@ -204,6 +204,8 @@ struct env_trig_rpt {
 struct env_mntr_rpt {
 	u8			nhm_ratio;
 	u8			nhm_env_ratio; /*exclude nhm_r[0] above -80dBm or first cluster under -80dBm*/
+	u8			nhm_idle_ratio;
+	u8			nhm_tx_ratio;
 	u8			nhm_result[NHM_RPT_NUM];
 	u8			clm_ratio;
 	u8			nhm_rpt_stamp;
@@ -222,6 +224,8 @@ struct enhance_mntr_trig_rpt {
 struct enhance_mntr_rpt {
 	u8			nhm_ratio;
 	u8			nhm_env_ratio; /*exclude nhm_r[0] above -80dBm or first cluster under -80dBm*/
+	u8			nhm_idle_ratio;
+	u8			nhm_tx_ratio;
 	u8			nhm_result[NHM_RPT_NUM];
 	u8			clm_ratio;
 	u8			nhm_rpt_stamp;
@@ -308,6 +312,8 @@ struct ccx_info {
 	u8			nhm_manual_ctrl;
 	u8			nhm_ratio;	/*@1% per nuit, it means the interference igi can't overcome.*/
 	u8			nhm_env_ratio; /*exclude nhm_r[0] above -80dBm or first cluster under -80dBm*/
+	u8			nhm_idle_ratio;
+	u8			nhm_tx_ratio;
 	u8			nhm_rpt_sum;
 	u16			nhm_duration;	/*@Real time of NHM_VALID */
 	u8			nhm_set_lv;

@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2017 Realtek Corporation.
+ * Copyright(c) 2007 - 2021 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -237,7 +237,8 @@ void rtw_vht_use_default_setting(_adapter *padapter)
 	BOOLEAN bHwSupportBeamformer = _FALSE, bHwSupportBeamformee = _FALSE;
 	u8 mu_bfer, mu_bfee;
 #endif /* CONFIG_BEAMFORMING */
-	u8 tx_nss, rx_nss;
+	/*u8 tx_nss;*/
+	u8 rx_nss;
 	u8 rf_type = 0;
 	struct mlme_ext_priv *pmlmeext = &(padapter->mlmeextpriv);
 	struct mlme_ext_info *pmlmeinfo = &(pmlmeext->mlmext_info);
@@ -347,7 +348,7 @@ void rtw_vht_use_default_setting(_adapter *padapter)
 
 	pvhtpriv->ampdu_len = pregistrypriv->ampdu_factor;
 
-	tx_nss = GET_HAL_TX_NSS(padapter);
+	/*tx_nss = GET_HAL_TX_NSS(padapter);*/
 	rx_nss = GET_HAL_RX_NSS(padapter);
 
 	/* for now, vhtpriv.vht_mcs_map comes from RX NSS */
@@ -751,7 +752,7 @@ void rtw_process_vht_op_mode_notify(_adapter *padapter, u8 *pframe, void *sta)
 	}
 
 	if (update_ra)
-		rtw_dm_ra_mask_wk_cmd(padapter, (u8 *)psta);
+		rtw_dm_ra_mask_wk_cmd(padapter, psta);
 }
 
 u32	rtw_build_vht_operation_ie(_adapter *padapter, u8 *pbuf, u8 channel)
@@ -979,7 +980,11 @@ u32	rtw_build_vht_cap_ie(_adapter *padapter, u8 *pbuf)
 	/* find the largest bw supported by both registry and hal */
 	bw = hal_largest_bw(padapter, REGSTY_BW_5G(pregistrypriv));
 
-	HighestRate = VHT_MCS_DATA_RATE[bw][pvhtpriv->sgi_80m][((pvhtpriv->vht_highest_rate - MGN_VHT1SS_MCS0) & 0x3f)];
+	if(bw >= ARRAY_SIZE(VHT_MCS_DATA_RATE)){
+		RTW_WARN("BW parameter value is out of range:%u\n", bw);
+		bw = ARRAY_SIZE(VHT_MCS_DATA_RATE) - 1;
+	}
+	HighestRate = VHT_MCS_DATA_RATE[bw][0][((pvhtpriv->vht_highest_rate - MGN_VHT1SS_MCS0) & 0x3f)];
 	HighestRate = (HighestRate + 1) >> 1;
 
 	SET_VHT_CAPABILITY_ELE_MCS_RX_HIGHEST_RATE(pcap, HighestRate); /* indicate we support highest rx rate is 600Mbps. */
@@ -987,17 +992,17 @@ u32	rtw_build_vht_cap_ie(_adapter *padapter, u8 *pbuf)
 
 	pbuf = rtw_set_ie(pbuf, EID_VHTCapability, 12, pcap, &len);
 
+
 	return len;
 }
 
-u32 rtw_restructure_vht_ie(_adapter *padapter, u8 *in_ie, u8 *out_ie, uint in_len, uint *pout_len, struct country_chplan *req_chplan)
+u32 rtw_restructure_vht_ie(_adapter *padapter, u8 *in_ie, u8 *out_ie, uint in_len, uint *pout_len, u8 channel)
 {
-	struct rf_ctl_t *rfctl = adapter_to_rfctl(padapter);
-	RT_CHANNEL_INFO *chset = rfctl->channel_set;
 	u32	ielen;
 	u8 max_bw;
 	u8 oper_ch, oper_bw = CHANNEL_WIDTH_20, oper_offset = HAL_PRIME_CHNL_OFFSET_DONT_CARE;
 	u8 *out_vht_op_ie, *ht_op_ie, *vht_cap_ie, *vht_op_ie;
+	BAND_TYPE band = rtw_is_2g_ch(channel) ? BAND_ON_2_4G : BAND_ON_5G;
 	struct registry_priv *pregistrypriv = &padapter->registrypriv;
 	struct mlme_priv	*pmlmepriv = &padapter->mlmepriv;
 	struct vht_priv	*pvhtpriv = &pmlmepriv->vhtpriv;
@@ -1026,7 +1031,10 @@ u32 rtw_restructure_vht_ie(_adapter *padapter, u8 *in_ie, u8 *out_ie, uint in_le
 	oper_ch = GET_HT_OP_ELE_PRI_CHL(ht_op_ie + 2);
 
 	/* find the largest bw supported by both registry and hal */
-	max_bw = hal_largest_bw(padapter, REGSTY_BW_5G(pregistrypriv));
+	if (band == BAND_ON_5G)
+		max_bw = hal_largest_bw(padapter, REGSTY_BW_5G(pregistrypriv));
+	else if (band == BAND_ON_2_4G)
+		max_bw = hal_largest_bw(padapter, REGSTY_BW_2G(pregistrypriv));
 
 	if (max_bw >= CHANNEL_WIDTH_40) {
 		/* get bw offset form HT_OP_IE */
@@ -1053,27 +1061,13 @@ u32 rtw_restructure_vht_ie(_adapter *padapter, u8 *in_ie, u8 *out_ie, uint in_le
 			}
 
 			oper_bw = rtw_min(oper_bw, max_bw);
-
-			/* try downgrage bw to fit in channel plan setting */
-			while ((req_chplan && !rtw_country_chplan_is_chbw_valid(req_chplan, BAND_ON_5G, oper_ch, oper_bw, oper_offset, 1, 1, pregistrypriv))
-				|| (!req_chplan && !rtw_chset_is_chbw_valid(chset, oper_ch, oper_bw, oper_offset, 1, 1))
-				|| (IS_DFS_SLAVE_WITH_RD(rfctl)
-					&& !rtw_rfctl_dfs_domain_unknown(rfctl)
-					&& rtw_chset_is_chbw_non_ocp(chset, oper_ch, oper_bw, oper_offset))
-			) {
-				oper_bw--;
-				if (oper_bw == CHANNEL_WIDTH_20) {
-					oper_offset = HAL_PRIME_CHNL_OFFSET_DONT_CARE;
-					break;
-				}
-			}
 		}
 	}
 
-	rtw_warn_on(req_chplan && !rtw_country_chplan_is_chbw_valid(req_chplan, BAND_ON_5G, oper_ch, oper_bw, oper_offset, 1, 1, pregistrypriv));
-	rtw_warn_on(!req_chplan && !rtw_chset_is_chbw_valid(chset, oper_ch, oper_bw, oper_offset, 1, 1));
-	if (IS_DFS_SLAVE_WITH_RD(rfctl) && !rtw_rfctl_dfs_domain_unknown(rfctl))
-		rtw_warn_on(rtw_chset_is_chbw_non_ocp(chset, oper_ch, oper_bw, oper_offset));
+	/* try downgrage bw to fit in channel plan setting */
+	oper_bw = adapter_adjust_linking_bw_by_regd(padapter, band, oper_ch, oper_bw, oper_offset);
+	if (oper_bw == CHANNEL_WIDTH_20)
+		oper_offset = HAL_PRIME_CHNL_OFFSET_DONT_CARE;
 
 	/* update VHT_OP_IE */
 	if (oper_bw < CHANNEL_WIDTH_80) {
@@ -1266,15 +1260,13 @@ void rtw_reattach_vht_ies(_adapter *padapter, WLAN_BSSID_EX *pnetwork)
 
 	RTW_INFO(FUNC_ADPT_FMT"\n", FUNC_ADPT_ARG(padapter));
 
-	if (pnetwork->IEs != NULL) {
-		vht_op_ie = rtw_set_ie(vht_cap_ie, EID_VHTCapability, VHT_CAP_IE_LEN,
-			pvhtpriv->vht_cap_ie_backup, &(pnetwork->IELength));
+	vht_op_ie = rtw_set_ie(vht_cap_ie, EID_VHTCapability, VHT_CAP_IE_LEN,
+		pvhtpriv->vht_cap_ie_backup, &(pnetwork->IELength));
 
-		rtw_set_ie(vht_op_ie, EID_VHTOperation, VHT_OP_IE_LEN,
-			pvhtpriv->vht_op_ie_backup, &(pnetwork->IELength));
+	rtw_set_ie(vht_op_ie, EID_VHTOperation, VHT_OP_IE_LEN,
+		pvhtpriv->vht_op_ie_backup, &(pnetwork->IELength));
 
-		rtw_set_vht_ext_cap(padapter, pnetwork);
-	}
+	rtw_set_vht_ext_cap(padapter, pnetwork);
 
 	pmlmepriv->vhtpriv.vht_option = _TRUE;
 }

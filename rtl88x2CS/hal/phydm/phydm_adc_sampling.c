@@ -135,14 +135,14 @@ phydm_la_clk_en(void *dm_void, boolean enable)
 }
 #endif
 
-#if (RTL8723F_SUPPORT)
+#if (RTL8723F_SUPPORT || RTL8730A_SUPPORT)
 void
 phydm_la_mac_clk_en(void *dm_void, boolean enable)
 {
 	struct dm_struct *dm = (struct dm_struct *)dm_void;
 	u8 val = (enable) ? 1 : 0;
 
-	if (!(dm->support_ic_type & ODM_RTL8723F))
+	if (!(dm->support_ic_type & (ODM_RTL8723F | ODM_RTL8730A)))
 		return;
 
 	odm_set_mac_reg(dm, R_0x1008, BIT(1), val);
@@ -229,6 +229,69 @@ phydm_la_mv_data_2_tx_buffer_rtl8723f(void *dm_void,  u32	source, u32	dest, u32 
 	 * Length : 32K
 	 */
 	/*
+	OCPBASE_IMEM = 0x18600000;
+	OCPBASE_TXBUF = 0x18780000;
+	GET_HAL_INTERFACE(dm->priv)->init_ddma_handler(dm->priv,
+						       OCPBASE_IMEM,
+						       OCPBASE_TXBUF
+						       + buf->start_pos,
+						       0x8000);
+	*/
+
+	// TODO: Replace all register define & bit define
+
+
+	//check if ddma ch0 is idle
+	while(odm_get_mac_reg(dm, R_0x1208 , BIT(31))){
+		ODM_delay_ms(10);
+		cnt--;
+		if(cnt==0){
+            pr_debug("1 InitDDMA88XX polling fail \n");
+			return;
+		}
+	}
+
+	ch0ctrl |= length & 0x3FFFF;
+
+	//check if chksum continuous
+	//ch0ctrl |= BIT(24);
+
+	odm_set_mac_reg(dm, R_0x1200, MASKDWORD, source); /*0x1200[31:0]:Source Address*/
+	odm_set_mac_reg(dm, R_0x1204, MASKDWORD, dest); /*0x1204[31:0]:Destination Address*/
+	odm_set_mac_reg(dm, R_0x1208, MASKDWORD, ch0ctrl); /*0x1208[17:0]:DMA Length*/
+//check if ddma ch0 is idle
+        while(odm_get_mac_reg(dm, R_0x1208 , BIT(31))){
+                ODM_delay_ms(10);
+                cnt--;
+                if(cnt==0){
+            pr_debug("2 InitDDMA88XX polling fail \n");
+                        return ;
+                }
+        }
+}
+#endif
+
+#if(RTL8730A_SUPPORT)
+void
+phydm_la_mv_data_2_tx_buffer_rtl8730a(void *dm_void,  u32	source, u32	dest, u32 	length)
+{
+	struct dm_struct *dm = (struct dm_struct *)dm_void;
+	struct rt_adcsmp *smp = &dm->adcsmp;
+	struct rt_adcsmp_string *buf = &smp->adc_smp_buf;
+		//u32	ch0ctrl = (BIT(29)|BIT(31));
+	u32	ch0ctrl = BIT(31);
+	u32	cnt=25000;
+
+	pr_debug("GetTxPktBuf from iMEM\n");
+	/*Disable LA mode HW block*/
+	odm_set_mac_reg(dm, R_0x7c0, BIT(0), 0x0);
+
+	/* @move LA mode content from IMEM to TxPktBuffer
+	 * Source : OCPBASE_IMEM 0x14040000
+	 * Destination : OCPBASE_TXBUF 0x18780000
+	 * Length : 32K
+	 */
+	 /*
 	OCPBASE_IMEM = 0x18600000;
 	OCPBASE_TXBUF = 0x18780000;
 	GET_HAL_INTERFACE(dm->priv)->init_ddma_handler(dm->priv,
@@ -1022,6 +1085,62 @@ void phydm_la_get_tx_pkt_buf(void *dm_void)
 			if (imem_start_addr_offset > (finish_addr << 3))
 				break;
 		}
+	}	
+#elif(RTL8730A_SUPPORT)
+	imem_base = 0x14040000;
+	txbuf_base = 0x18780000;
+	dma_len = 0x8000;
+	txbuff_start_addr = txbuf_base;
+	imem_start_addr_offset = addr;
+	if (is_round_up) {
+		for(index = 0;index < 4;index++) {
+			dma_len = 0x8000;
+			imem_start_addr= imem_base + (imem_start_addr_offset&0x1FFFF);
+			if((imem_start_addr_offset + 0x8000) >= buf->end_pos) {
+				dma_len = buf->end_pos-imem_start_addr_offset;
+				phydm_la_mv_data_2_tx_buffer_rtl8730a(dm, imem_start_addr, txbuff_start_addr, dma_len);
+				tx_buff_addr = 0;
+				for (i = 0; i < (dma_len >> 3); i++) {
+					phydm_la_access_tx_pkt_buf(dm, tx_buff_addr, i << 1);
+					tx_buff_addr += 8;
+				}
+				imem_start_addr = imem_base;
+				dma_len = 0x8000-dma_len;
+				phydm_la_mv_data_2_tx_buffer_rtl8730a(dm, imem_start_addr, txbuff_start_addr, dma_len);
+				tx_buff_addr = 0;
+				for (i = 0; i < (dma_len >> 3); i++) {
+					phydm_la_access_tx_pkt_buf(dm, tx_buff_addr, i << 1);
+					tx_buff_addr += 8;
+				}
+				imem_start_addr_offset = dma_len;
+			}
+			else {
+				dma_len = 0x8000;
+				phydm_la_mv_data_2_tx_buffer_rtl8730a(dm, imem_start_addr, txbuff_start_addr, dma_len);
+				tx_buff_addr = 0;
+				for (i = 0; i <4096; i++) {
+					phydm_la_access_tx_pkt_buf(dm, tx_buff_addr, i << 1);
+					tx_buff_addr += 8;
+				}
+				imem_start_addr_offset += 0x8000;
+			}
+		}
+	} else {
+		for(index = 0; index < 4;index++) {
+			imem_start_addr = imem_base + (imem_start_addr_offset & 0x1FFFF);
+			if ((imem_start_addr_offset + 0x8000) > (finish_addr << 3))
+				dma_len = (finish_addr << 3) - imem_start_addr_offset; /*0x1208[17:0]:DMA Length*/
+			phydm_la_mv_data_2_tx_buffer_rtl8730a(dm,imem_start_addr, txbuff_start_addr, dma_len);
+			tx_buff_addr = 0;
+			for (i = 0; i < (dma_len >> 3); i++) {
+				phydm_la_access_tx_pkt_buf(dm, tx_buff_addr, i << 1);
+				tx_buff_addr += 8;
+			}
+			dma_len = 0x8000;
+			imem_start_addr_offset += 0x8000;
+			if (imem_start_addr_offset > (finish_addr << 3))
+				break;
+		}
 	}
 #else
 
@@ -1048,6 +1167,7 @@ void phydm_la_get_tx_pkt_buf(void *dm_void)
 	#if (RTL8197F_SUPPORT)
 	phydm_la_stop_dma_8197f(dm, PHYDM_RESTORE);
 	#endif
+	
 #endif
 	pr_debug("Dump_End\n");
 }
@@ -1084,10 +1204,11 @@ void phydm_la_set_mac_iq_dump(void *dm_void, boolean impossible_trig_condi)
 	/*@Enable LA mode HW block*/
 	odm_set_mac_reg(dm, reg1, BIT(0), 1);
 
-	#if (RTL8723F_SUPPORT)
-	if (dm->support_ic_type & ODM_RTL8723F)
+	#if (RTL8723F_SUPPORT || RTL8730A_SUPPORT)
+	if (dm->support_ic_type & (ODM_RTL8723F | ODM_RTL8730A))
 		phydm_la_mac_clk_en(dm, true);
 	#endif
+	
 
 	if (smp->la_trig_mode == PHYDM_MAC_TRIG) {
 		smp->la_dump_mode = LA_MAC_DBG_DUMP;
@@ -1291,7 +1412,7 @@ void phydm_la_set_mac_trigger_time(void *dm_void, u32 trigger_time_mu_sec)
 	else if (trigger_time_mu_sec < 8192)
 		unit = 6; /*unit: 64mu sec*/
 	else if (trigger_time_mu_sec < 16384)
-		if (dm->support_ic_type & ODM_RTL8723F)
+		if (dm->support_ic_type & (ODM_RTL8723F | ODM_RTL8730A))
 			unit = 7; /*unit: 128mu sec*/
 
 	time_unit_num = (u8)(trigger_time_mu_sec >> unit);
@@ -1342,6 +1463,7 @@ void phydm_la_set_buff_mode(void *dm_void, enum la_buff_mode mode)
 	case ODM_RTL8822B:
 	case ODM_RTL8822C:
 	case ODM_RTL8812F:
+	case ODM_RTL8822E:
 		buff_size_base = 0x20000; /*@WIN: TX_FIFO_SIZE_LA_8822C*/
 		end_pos_tmp = 0x40000;
 		break;
@@ -1374,6 +1496,14 @@ void phydm_la_set_buff_mode(void *dm_void, enum la_buff_mode mode)
 		buff_size_base = 0x20000;
 		end_pos_tmp = 0x20000;
 		break;
+	case ODM_RTL8735B:
+		buff_size_base = 0x4000;
+		end_pos_tmp = 0x8000;
+		break;
+	case ODM_RTL8730A:
+		buff_size_base = 0x20000;
+		end_pos_tmp = 0x20000;
+		break;		
 	default:
 		pr_debug("[%s] Warning!", __func__);
 		break;
@@ -1413,7 +1543,9 @@ void phydm_la_adc_smp_start(void *dm_void)
 	u8 tmp_u1b = 0;
 	u8 i = 0;
 	u8 polling_bit = 0;
+#if (RTL8723F_SUPPORT || RTL8730A_SUPPORT)
 	u8 bkp_val = 0;
+#endif
 	boolean polling_ok = false;
 	boolean impossible_trig_condi = (smp->en_fake_trig) ? true : false;
 
@@ -1427,8 +1559,12 @@ void phydm_la_adc_smp_start(void *dm_void)
 		 smp->la_trig_mode, smp->la_dbg_port, smp->la_trigger_edge,
 		 smp->la_smp_rate, smp->la_trig_sig_sel, smp->la_dma_type);
 
+#if (RTL8723F_SUPPORT || RTL8730A_SUPPORT)
 	if(dm->support_ic_type & ODM_RTL8723F)
 		bkp_val = (u8)odm_get_mac_reg(dm, R_0x1008, BIT(1));
+	else if(dm->support_ic_type & ODM_RTL8730A)
+		bkp_val = (u8)odm_get_mac_reg(dm, R_0x1008, BIT(1));
+#endif
 
 	phydm_la_set_mac_trigger_time(dm, smp->la_trigger_time);
 	phydm_la_set_bb(dm);
@@ -1505,8 +1641,8 @@ void phydm_la_adc_smp_start(void *dm_void)
 		#if (RTL8821C_SUPPORT || RTL8195B_SUPPORT)
 		phydm_la_clk_en(dm, false);
 		#endif
-		#if (RTL8723F_SUPPORT)
-		if(dm->support_ic_type & ODM_RTL8723F)
+		#if (RTL8723F_SUPPORT || RTL8730A_SUPPORT)
+		if(dm->support_ic_type & (ODM_RTL8723F | ODM_RTL8730A))
 			phydm_la_mac_clk_en(dm, (bkp_val == 1) ? true : false);
 		#endif
 	} else {

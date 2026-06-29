@@ -177,14 +177,12 @@ exit:
 static u32 sdio_write_port(struct intf_hdl *pintfhdl, u32 addr, u32 cnt, u8 *mem)
 {
 	struct dvobj_priv *d;
-	PADAPTER adapter;
 	struct xmit_buf *xmitbuf;
 	u32 txaddr, txsize;
 	u32 ret = _FAIL;
 
 
 	d = pintfhdl->pintf_dev;
-	adapter = pintfhdl->padapter;
 	xmitbuf = (struct xmit_buf *)mem;
 
 #if 0 /* who will call this when hardware not be initialized? */
@@ -345,13 +343,13 @@ void sd_int_dpc(PADAPTER adapter)
 #endif /* CONFIG_SDIO_TX_ENABLE_AVAL_INT */
 
 	if (phal->sdio_hisr & BIT_SDIO_CPWM1_8822C) {
-		struct reportpwrstate_parm report;
+		/* struct reportpwrstate_parm report; */
 
 #ifdef CONFIG_LPS_RPWM_TIMER
 		_cancel_timer_ex(&pwrctl->pwr_rpwm_timer);
 #endif /* CONFIG_LPS_RPWM_TIMER */
 
-		report.state = rtw_read8(adapter, REG_SDIO_HCPWM1_V2_8822C);
+		/* report.state = rtw_read8(adapter, REG_SDIO_HCPWM1_V2_8822C); */
 
 #ifdef CONFIG_LPS_LCLK
 		_set_workitem(&(pwrctl->cpwm_event));

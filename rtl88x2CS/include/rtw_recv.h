@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2017 Realtek Corporation.
+ * Copyright(c) 2007 - 2021 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -30,11 +30,9 @@
 		#define NR_RECVBUFF (8)
 	#endif
 #endif /* CONFIG_SINGLE_RECV_BUF */
-#ifdef CONFIG_PREALLOC_RX_SKB_BUFFER
-	#define NR_PREALLOC_RECV_SKB (rtw_rtkm_get_nr_recv_skb()>>1)
-#else /*!CONFIG_PREALLOC_RX_SKB_BUFFER */
+#ifndef NR_PREALLOC_RECV_SKB
 	#define NR_PREALLOC_RECV_SKB 8
-#endif /* CONFIG_PREALLOC_RX_SKB_BUFFER */
+#endif /* NR_PREALLOC_RECV_SKB */
 
 #ifdef CONFIG_RTW_NAPI
 	#define RTL_NAPI_WEIGHT (32)
@@ -226,8 +224,17 @@ struct rx_pkt_attrib	{
 /* #define REORDER_ENTRY_NUM	128 */
 #define REORDER_WAIT_TIME	(50) /* (ms) */
 
-#if defined(CONFIG_PLATFORM_RTK390X) && defined(CONFIG_USB_HCI)
+#ifdef CONFIG_USB_HCI
+#ifdef CONFIG_PLATFORM_I386_PC
+	#define RECVBUFF_ALIGN_SZ 8
+#elif defined(CONFIG_PLATFORM_RTK390X)
 	#define RECVBUFF_ALIGN_SZ 32
+#else
+#ifndef RECVBUFF_ALIGN_SZ
+	/* Avoid the Synopsys USB host receive buffer size limit */
+	#define RECVBUFF_ALIGN_SZ 4096
+#endif
+#endif
 #else
 	#define RECVBUFF_ALIGN_SZ 8
 #endif
@@ -260,7 +267,10 @@ struct recv_stat {
 
 	unsigned int rxdw1;
 
-#if !((defined(CONFIG_RTL8192E) || defined(CONFIG_RTL8814A) || defined(CONFIG_RTL8822B) || defined(CONFIG_RTL8821C) || defined(CONFIG_RTL8822C)) && defined(CONFIG_PCI_HCI))  /* exclude 8192ee, 8814ae, 8822be, 8821ce */
+#if !((defined(CONFIG_RTL8192E) || defined(CONFIG_RTL8814A) || defined(CONFIG_RTL8822B) \
+	|| defined(CONFIG_RTL8821C) || defined(CONFIG_RTL8822C) \
+	|| defined(CONFIG_RTL8822E)) && defined(CONFIG_PCI_HCI))
+	/* exclude 8192ee, 8814ae, 8822be, 8821ce */
 	unsigned int rxdw2;
 
 	unsigned int rxdw3;
@@ -530,6 +540,8 @@ struct recv_priv {
 	struct smooth_rssi_data signal_strength_data;
 #endif /* CONFIG_NEW_SIGNAL_STAT_PROCESS */
 	u16 sink_udpport, pre_rtp_rxseq, cur_rtp_rxseq;
+	u16 pre_wifi_seq, cur_wifi_seq;
+	u64 rtp_drop_count;
 
 	BOOLEAN store_law_data_flag;
 };
@@ -837,14 +849,11 @@ __inline static u8 *recvframe_put(union recv_frame *precvframe, sint sz)
 
 	/* used for append sz bytes from ptr to rx_tail, update rx_tail and return the updated rx_tail to the caller */
 	/* after putting, rx_tail must be still larger than rx_end. */
-	unsigned char *prev_rx_tail;
 
 	/* RTW_INFO("recvframe_put: len=%d\n", sz); */
 
 	if (precvframe == NULL)
 		return NULL;
-
-	prev_rx_tail = precvframe->u.hdr.rx_tail;
 
 	precvframe->u.hdr.rx_tail += sz;
 
@@ -856,10 +865,7 @@ __inline static u8 *recvframe_put(union recv_frame *precvframe, sint sz)
 	precvframe->u.hdr.len += sz;
 
 	return precvframe->u.hdr.rx_tail;
-
 }
-
-
 
 __inline static u8 *recvframe_pull_tail(union recv_frame *precvframe, sint sz)
 {

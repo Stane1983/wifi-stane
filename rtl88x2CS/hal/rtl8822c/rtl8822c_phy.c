@@ -385,14 +385,14 @@ void dm_InterruptMigration(PADAPTER adapter)
 {
 	PHAL_DATA_TYPE hal = GET_HAL_DATA(adapter);
 	struct mlme_priv *pmlmepriv = &adapter->mlmepriv;
-	BOOLEAN bCurrentIntMt, bCurrentACIntDisable;
+	BOOLEAN bCurrentIntMt;
+	/* BOOLEAN bCurrentIntMt, bCurrentACIntDisable;*/
 	BOOLEAN IntMtToSet = _FALSE;
-	BOOLEAN ACIntToSet = _FALSE;
-
+	/* BOOLEAN ACIntToSet = _FALSE; */
 
 	/* Retrieve current interrupt migration and Tx four ACs IMR settings first. */
 	bCurrentIntMt = hal->bInterruptMigration;
-	bCurrentACIntDisable = hal->bDisableTxInt;
+	/* bCurrentACIntDisable = hal->bDisableTxInt; */
 
 	/*
 	 * <Roger_Notes> Currently we use busy traffic for reference instead of RxIntOK counts to prevent non-linear Rx statistics
@@ -404,8 +404,10 @@ void dm_InterruptMigration(PADAPTER adapter)
 		IntMtToSet = _TRUE;
 
 		/* To check whether we should disable Tx interrupt or not. */
+		#if 0
 		if (pmlmepriv->LinkDetectInfo.bHigherBusyRxTraffic)
 			ACIntToSet = _TRUE;
+		#endif
 	}
 
 	/* Update current settings. */
@@ -1382,13 +1384,13 @@ static void _sounding_config_su(PADAPTER adapter, struct beamformee_entry *bfee,
 				new_ctrl |= BIT_R_TXBF0_80M_8822C;
 			else if (1 == bfee->su_reg_index)
 				new_ctrl |= BIT_R_TXBF1_80M_8822C;
-			/* fall through */
+			fallthrough;
 		case CHANNEL_WIDTH_40:
 			if (0 == bfee->su_reg_index)
 				new_ctrl |= BIT_R_TXBF0_40M_8822C;
 			else if (1 == bfee->su_reg_index)
 				new_ctrl |= BIT_R_TXBF1_40M_8822C;
-			/* fall through */
+			fallthrough;
 		case CHANNEL_WIDTH_20:
 			if (0 == bfee->su_reg_index)
 				new_ctrl |= BIT_R_TXBF0_20M_8822C;
@@ -1623,8 +1625,6 @@ static void _config_beamformer_su(PADAPTER adapter, struct beamformer_entry *bfe
 
 static void _config_beamformer_mu(PADAPTER adapter, struct beamformer_entry *bfer)
 {
-	/* General */
-	PHAL_DATA_TYPE hal;
 	/* Beamforming */
 	struct beamforming_info *bf_info;
 	u8 nc_index = 0, nr_index = 0;
@@ -1636,7 +1636,6 @@ static void _config_beamformer_mu(PADAPTER adapter, struct beamformer_entry *bfe
 
 	RTW_INFO("%s: Config MU BFer entry HW setting\n", __FUNCTION__);
 
-	hal = GET_HAL_DATA(adapter);
 	bf_info = GET_BEAMFORM_INFO(adapter);
 
 	/* Reset GID table */
@@ -1741,8 +1740,6 @@ static void _config_beamformee_su(PADAPTER adapter, struct beamformee_entry *bfe
 
 static void _config_beamformee_mu(PADAPTER adapter, struct beamformee_entry *bfee)
 {
-	/* General */
-	PHAL_DATA_TYPE hal;
 	/* Beamforming */
 	struct beamforming_info *info;
 	u8 idx;
@@ -1761,7 +1758,6 @@ static void _config_beamformee_mu(PADAPTER adapter, struct beamformee_entry *bfe
 
 	RTW_INFO("%s: Config MU BFee entry HW setting\n", __FUNCTION__);
 
-	hal = GET_HAL_DATA(adapter);
 	info = GET_BEAMFORM_INFO(adapter);
 	idx = bfee->mu_reg_index;
 

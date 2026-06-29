@@ -1,0 +1,17 @@
+diff --git a/rtl88x2CS/include/autoconf.h b/rtl88x2CS/include/autoconf.h
+index 0af9467..8700c23 100644
+--- a/rtl88x2CS/include/autoconf.h
++++ b/rtl88x2CS/include/autoconf.h
+@@ -163,7 +163,8 @@
+ /*#define CONFIG_PATCH_JOIN_WRONG_CHANNEL*/
+ 
+ #ifdef CONFIG_RTW_NAPI
+-#define CONFIG_RTW_NAPI_DYNAMIC
++//CONFIG_RTW_NAPI_DYNAMIC may be make device crash
++//#define CONFIG_RTW_NAPI_DYNAMIC
+ #define CONFIG_RTW_NAPI_V2
+ #endif
+ 
+-- 
+2.42.0
+

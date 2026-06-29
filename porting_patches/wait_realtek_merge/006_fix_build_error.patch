@@ -1,0 +1,12 @@
+diff --git a/rtl88x2CS/BUILD.bazel b/rtl88x2CS/BUILD.bazel
+index 5af1d45..581dbdd 100644
+--- a/rtl88x2CS/BUILD.bazel
++++ b/rtl88x2CS/BUILD.bazel
+@@ -1,6 +1,4 @@
+-load("@kleaf//build/kernel/kleaf:kernel.bzl", "ddk_module")
+-load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
+-
++load("//build/kernel/kleaf:kernel.bzl", "ddk_headers", "ddk_module")
+ 
+ filegroup(
+     name = "driver_files",

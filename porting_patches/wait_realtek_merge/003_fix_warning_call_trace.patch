@@ -1,0 +1,38 @@
+From f55b5221727ab786de76a17d9f1634f420f838ff Mon Sep 17 00:00:00 2001
+From: "hong.zhang" <hong.zhang@amlogic.com>
+Date: Mon, 11 Nov 2024 17:34:44 +0800
+Subject: [PATCH 9/9] 8822cs: [PATCH] Fix nl80211_send_chandef warn on [1/1]
+
+PD#TV-138165
+
+Problem:
+the variable is not init
+
+Solution:
+init the variable before use
+
+Verify:
+pass
+
+Change-Id: I75de5b9b82fbabb95adb65f4bc59db97d59fb4a6
+Signed-off-by: hong.zhang <hong.zhang@amlogic.com>
+---
+ rtl88x2CS/os_dep/linux/ioctl_cfg80211.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/rtl88x2CS/os_dep/linux/ioctl_cfg80211.c b/rtl88x2CS/os_dep/linux/ioctl_cfg80211.c
+index 0d397f3..b22aff8 100755
+--- a/rtl88x2CS/os_dep/linux/ioctl_cfg80211.c
++++ b/rtl88x2CS/os_dep/linux/ioctl_cfg80211.c
+@@ -502,7 +502,7 @@ u8 rtw_cfg80211_ch_switch_notify(_adapter *adapter, u8 ch, u8 bw, u8 offset,
+ 	u8 ret = _SUCCESS;
+ 
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
+-	struct cfg80211_chan_def chdef;
++	struct cfg80211_chan_def chdef = {0};
+ 
+ 	ret = rtw_chbw_to_cfg80211_chan_def(wiphy, &chdef, ch, bw, offset, ht);
+ 	if (ret != _SUCCESS)
+-- 
+2.42.0
+

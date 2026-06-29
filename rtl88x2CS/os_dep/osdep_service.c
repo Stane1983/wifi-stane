@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2017 Realtek Corporation.
+ * Copyright(c) 2007 - 2021 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -304,7 +304,11 @@ void *_rtw_malloc(u32 sz)
 		pbuf = dvr_malloc(sz);
 	else
 #endif
-		pbuf = kmalloc(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL | __GFP_RETRY_MAYFAIL);
+#ifdef CONFIG_RTKM
+		pbuf = rtkm_kmalloc(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+#else /* !CONFIG_RTKM */
+		pbuf = kmalloc(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+#endif /* CONFIG_RTKM */
 
 #endif
 #ifdef PLATFORM_FREEBSD
@@ -340,6 +344,9 @@ void *_rtw_zmalloc(u32 sz)
 #ifdef PLATFORM_FREEBSD
 	return malloc(sz, M_DEVBUF, M_ZERO | M_NOWAIT);
 #else /* PLATFORM_FREEBSD */
+#ifdef CONFIG_RTKM
+	void *pbuf = rtkm_kzalloc(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
+#else /* !CONFIG_RTKM */
 	void *pbuf = _rtw_malloc(sz);
 
 	if (pbuf != NULL) {
@@ -352,6 +359,7 @@ void *_rtw_zmalloc(u32 sz)
 		NdisFillMemory(pbuf, sz, 0);
 #endif
 	}
+#endif /* CONFIG_RTKM */
 
 	return pbuf;
 #endif /* PLATFORM_FREEBSD */
@@ -371,7 +379,11 @@ void _rtw_mfree(void *pbuf, u32 sz)
 		dvr_free(pbuf);
 	else
 #endif
+#ifdef CONFIG_RTKM
+		rtkm_kfree(pbuf, sz);
+#else /* !CONFIG_RTKM */
 		kfree(pbuf);
+#endif /* CONFIG_RTKM */
 
 #endif
 #ifdef PLATFORM_FREEBSD
@@ -474,7 +486,7 @@ nodata:
 inline struct sk_buff *_rtw_skb_alloc(u32 sz)
 {
 #ifdef PLATFORM_LINUX
-	return __dev_alloc_skb(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL | __GFP_RETRY_MAYFAIL);
+	return __dev_alloc_skb(sz, in_interrupt() ? GFP_ATOMIC : GFP_KERNEL);
 #endif /* PLATFORM_LINUX */
 
 #ifdef PLATFORM_FREEBSD
@@ -1505,7 +1517,11 @@ u32 _rtw_down_sema(_sema *sema)
 inline void thread_exit(_completion *comp)
 {
 #ifdef PLATFORM_LINUX
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0))
 	complete_and_exit(comp, 0);
+#else
+	kthread_complete_and_exit(comp, 0);
+#endif
 #endif
 
 #ifdef PLATFORM_FREEBSD
@@ -1819,6 +1835,15 @@ inline bool _rtw_time_after(systime a, systime b)
 {
 #ifdef PLATFORM_LINUX
 	return time_after(a, b);
+#else
+	#error "TBD\n"
+#endif
+}
+
+inline bool _rtw_time_after_eq(systime a, systime b)
+{
+#ifdef PLATFORM_LINUX
+	return time_after_eq(a, b);
 #else
 	#error "TBD\n"
 #endif
@@ -3186,7 +3211,9 @@ u64 rtw_division64(u64 x, u64 y)
 inline u32 rtw_random32(void)
 {
 #ifdef PLATFORM_LINUX
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+	return get_random_u32();
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0))
 	return prandom_u32();
 #elif (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 18))
 	u32 random_int;
@@ -3204,19 +3231,12 @@ inline u32 rtw_random32(void)
 
 void rtw_buf_free(u8 **buf, u32 *buf_len)
 {
-	u32 ori_len;
-
-	if (!buf || !buf_len)
+	if (!buf || !(*buf) || !buf_len)
 		return;
 
-	ori_len = *buf_len;
-
-	if (*buf) {
-		u32 tmp_buf_len = *buf_len;
-		*buf_len = 0;
-		rtw_mfree(*buf, tmp_buf_len);
-		*buf = NULL;
-	}
+	rtw_mfree(*buf, *buf_len);
+	*buf = NULL;
+	*buf_len = 0;
 }
 
 void rtw_buf_update(u8 **buf, u32 *buf_len, const u8 *src, u32 src_len)
@@ -3763,5 +3783,48 @@ int hwaddr_aton_i(const char *txt, u8 *addr)
 	}
 
 	return 0;
+}
+
+void ustrs_add(char **ustrs, int *ustrs_len, const char *str)
+{
+	char *tmp_ustrs;
+	int tmp_ustrs_len;
+
+	if (!str || !strlen(str))
+		return;
+
+	tmp_ustrs = *ustrs;
+	tmp_ustrs_len = *ustrs_len;
+	if (tmp_ustrs) {
+		const char *pos;
+
+		/* search for same string */
+		for (pos = tmp_ustrs; pos < tmp_ustrs + tmp_ustrs_len; pos += strlen(pos) + 1) {
+			if (strcmp(pos, str) == 0)
+				return;
+		}
+
+		/* no match, realloc and add */
+		tmp_ustrs = rtw_malloc(tmp_ustrs_len + strlen(str) + 1);
+		if (!tmp_ustrs) {
+			rtw_warn_on(1);
+			return;
+		}
+		_rtw_memcpy((void *)tmp_ustrs, *ustrs, tmp_ustrs_len);
+		_rtw_memcpy((void *)(tmp_ustrs + tmp_ustrs_len), str, strlen(str) + 1);
+		rtw_mfree((void *)*ustrs, tmp_ustrs_len);
+		*ustrs = tmp_ustrs;
+		*ustrs_len += strlen(str) + 1;
+
+	} else {
+		tmp_ustrs = rtw_malloc(strlen(str) + 1);
+		if (!tmp_ustrs) {
+			rtw_warn_on(1);
+			return;
+		}
+		_rtw_memcpy((void *)tmp_ustrs, str, strlen(str) + 1);
+		*ustrs = tmp_ustrs;
+		*ustrs_len = strlen(str) + 1;
+	}
 }
 

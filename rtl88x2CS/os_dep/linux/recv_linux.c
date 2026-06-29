@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2017 Realtek Corporation.
+ * Copyright(c) 2007 - 2021 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -210,13 +210,14 @@ void rtw_os_recv_resource_free(struct recv_priv *precvpriv)
 }
 
 #if defined(CONFIG_SDIO_HCI) || defined(CONFIG_GSPI_HCI)
-#if !defined(CONFIG_RTL8822B) && !defined(CONFIG_RTL8822C) && !defined(CONFIG_RTL8723F)
+#if !defined(CONFIG_RTL8822B) && !defined(CONFIG_RTL8822C) \
+	&& !defined(CONFIG_RTL8723F) && !defined(CONFIG_RTL8822E)
 #ifdef CONFIG_SDIO_RX_COPY
 static int sdio_init_recvbuf_with_skb(struct recv_priv *recvpriv, struct recv_buf *rbuf, u32 size)
 {
 #ifdef CONFIG_PREALLOC_RX_SKB_BUFFER
 	if (RBUF_IS_PREALLOC(rbuf)) {
-		rbuf->pskb = rtw_alloc_skb_premem(size);
+		rbuf->pskb = rtkm_alloc_skb(size);
 		if (!rbuf->pskb) {
 			RTW_WARN("%s: Fail to get pre-alloc skb! size=%d\n", __func__, size);
 			return _FAIL;
@@ -287,7 +288,8 @@ int rtw_os_recvbuf_resource_alloc(_adapter *padapter, struct recv_buf *precvbuf,
 #endif /* CONFIG_USE_USB_BUFFER_ALLOC_RX */
 
 #elif defined(CONFIG_SDIO_HCI) || defined(CONFIG_GSPI_HCI)
-	#if !defined(CONFIG_RTL8822B) && !defined(CONFIG_RTL8822C) && !defined(CONFIG_RTL8723F)
+	#if !defined(CONFIG_RTL8822B) && !defined(CONFIG_RTL8822C) \
+		&& !defined(CONFIG_RTL8723F) && !defined(CONFIG_RTL8822E)
 	#ifdef CONFIG_SDIO_RX_COPY
 	res = sdio_init_recvbuf_with_skb(&padapter->recvpriv, precvbuf, size);
 	#endif
@@ -326,9 +328,10 @@ int rtw_os_recvbuf_resource_free(_adapter *padapter, struct recv_buf *precvbuf)
 
 	if (precvbuf->pskb) {
 #ifdef CONFIG_PREALLOC_RX_SKB_BUFFER
-		if (rtw_free_skb_premem(precvbuf->pskb) != 0)
+		rtkm_kfree_skb_any(precvbuf->pskb);
+#else
+		rtw_skb_free(precvbuf->pskb);
 #endif
-			rtw_skb_free(precvbuf->pskb);
 	}
 	return ret;
 
@@ -339,9 +342,7 @@ _pkt *rtw_os_alloc_msdu_pkt(union recv_frame *prframe, const u8 *da, const u8 *s
 {
 	u8	*data_ptr;
 	_pkt *sub_skb;
-	struct rx_pkt_attrib *pattrib;
 
-	pattrib = &prframe->u.hdr.attrib;
 
 #ifdef CONFIG_SKB_COPY
 	sub_skb = rtw_skb_alloc(msdu_len + 14);
@@ -555,10 +556,12 @@ void rtw_os_recv_indicate_pkt(_adapter *padapter, _pkt *pkt, union recv_frame *r
 #endif /* CONFIG_RTW_NAPI */
 
 		ret = rtw_netif_rx(padapter->pnetdev, pkt);
-		if (ret == NET_RX_SUCCESS)
+		if (ret == NET_RX_SUCCESS) {
 			DBG_COUNTER(padapter->rx_logs.os_netif_ok);
-		else
+		}
+		else {
 			DBG_COUNTER(padapter->rx_logs.os_netif_err);
+		}
 	}
 }
 

@@ -32,8 +32,13 @@ void rtl8822c_init_hal_spec(PADAPTER adapter)
 	hal_spec->macid_num = 128;
 	/* hal_spec->sec_cam_ent_num follow halmac setting */
 	hal_spec->sec_cap = SEC_CAP_CHK_BMC | SEC_CAP_CHK_EXTRA_SEC;
-	hal_spec->wow_cap = WOW_CAP_TKIP_OL;
+#ifdef CONFIG_USB_HCI
+	hal_spec->wow_cap = WOW_CAP_TKIP_OL/* | WOW_CAP_CSA | WOW_CAP_MDNS */| WOW_CAP_DIS_INBAND_SIGNAL;
+#else
+	hal_spec->wow_cap = WOW_CAP_TKIP_OL/* | WOW_CAP_CSA | WOW_CAP_MDNS */;
+#endif
 	hal_spec->macid_cap = MACID_DROP;
+	hal_spec->txpause_cap = TXPAUSE_CAP_FW_CTRL;
 
 	hal_spec->rfpath_num_2g = 2;
 	hal_spec->rfpath_num_5g = 2;
@@ -218,13 +223,8 @@ u8 rtl8822c_mac_verify(PADAPTER adapter)
 
 void rtl8822c_init_misc(PADAPTER adapter)
 {
-	PHAL_DATA_TYPE hal;
 	u8 v8 = 0;
 	u32 v32 = 0;
-
-
-	hal = GET_HAL_DATA(adapter);
-
 
 	/* initial security setting */
 	invalidate_cam_all(adapter);

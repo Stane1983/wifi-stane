@@ -1,0 +1,51 @@
+diff --git a/rtl88x2CS/Makefile b/rtl88x2CS/Makefile
+index 6600f57..1e52bc6 100755
+--- a/rtl88x2CS/Makefile
++++ b/rtl88x2CS/Makefile
+@@ -14,6 +14,7 @@ EXTRA_CFLAGS += -Wno-unused-variable
+ #EXTRA_CFLAGS += -Wno-unused-function
+ #EXTRA_CFLAGS += -Wno-unused
+ #EXTRA_CFLAGS += -Wno-uninitialized
++EXTRA_CFLAGS += -Wno-incompatible-pointer-types
+ EXTRA_CFLAGS += -Wno-missing-prototypes
+ EXTRA_CFLAGS += -Wno-missing-declarations
+ 
+diff --git a/rtl88x2CS/include/drv_conf.h b/rtl88x2CS/include/drv_conf.h
+index 8d3d0e6..a27ef61 100644
+--- a/rtl88x2CS/include/drv_conf.h
++++ b/rtl88x2CS/include/drv_conf.h
+@@ -82,7 +82,7 @@
+ /* Default enable single wiphy if driver ver >= 5.9 */
+ #define RTW_SINGLE_WIPHY
+ 
+-#if (defined(__ANDROID_COMMON_KERNEL__) && !defined(CONFIG_RTW_ANDROID))
++#if (defined(CONFIG_AMLOGIC_KERNEL_VERSION) && !defined(CONFIG_RTW_ANDROID))
+ 	#error "Set CONFIG_RTW_ANDROID in Makefile while build with Android Common Kernel!!"
+ #endif
+ 
+diff --git a/rtl88x2CS/include/osdep_service_linux.h b/rtl88x2CS/include/osdep_service_linux.h
+index bba6a3e..b803011 100755
+--- a/rtl88x2CS/include/osdep_service_linux.h
++++ b/rtl88x2CS/include/osdep_service_linux.h
+@@ -163,7 +163,7 @@
+  * refs/heads/common-android13-5.15-2023-04 (5.15.94)
+  * refs/heads/android13-5.15-lts (5.15.106)
+  */
+-#if (defined(__ANDROID_COMMON_KERNEL__) && (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 94)))
++#if (defined(CONFIG_AMLOGIC_KERNEL_VERSION) && (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 94)))
+         #define CONFIG_MLD_KERNEL_PATCH
+ #endif
+ 
+diff --git a/rtl88x2CS/os_dep/linux/os_ch_utils.c b/rtl88x2CS/os_dep/linux/os_ch_utils.c
+index ea31de0..fcf9cc9 100755
+--- a/rtl88x2CS/os_dep/linux/os_ch_utils.c
++++ b/rtl88x2CS/os_dep/linux/os_ch_utils.c
+@@ -135,7 +135,7 @@ const enum band_type _nl80211_band_to_rtw_band[] = {
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0))
+ 	[NL80211_BAND_S1GHZ]	= BAND_MAX,	/* around 900MHz, supported by S1G PHYs */
+ #endif
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)) || (defined(__ANDROID_COMMON_KERNEL__) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)) || (defined(CONFIG_AMLOGIC_KERNEL_VERSION) && LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
+ 	[NL80211_BAND_LC]	= BAND_MAX,	/* light communication band (placeholder) */
+ #endif
+ };

@@ -181,13 +181,6 @@ tx_allowed_sdio_8822c(struct halmac_adapter *adapter, u8 *buf, u32 size)
 
 	PLTFM_MSG_TRACE("[TRACE]%s ===>\n", __func__);
 
-	if (!fs_info->macid_map) {
-		PLTFM_MSG_ERR("[ERR]halmac allocate Macid_map Fail!!\n");
-		return HALMAC_RET_MALLOC_FAIL;
-	}
-
-	PLTFM_MEMSET(fs_info->macid_map, 0x00, fs_info->macid_map_size);
-
 	tx_agg_num = GET_TX_DESC_DMA_TXAGG_NUM(buf);
 	tx_agg_num = (tx_agg_num == 0) ? 1 : tx_agg_num;
 
@@ -206,7 +199,7 @@ tx_allowed_sdio_8822c(struct halmac_adapter *adapter, u8 *buf, u32 size)
 			status = chk_oqt_8822c(adapter, tx_agg_num, buf,
 					       macid_cnt);
 			if (status != HALMAC_RET_SUCCESS) {
-				PLTFM_MSG_WARN("[WARN]oqt buffer full!!\n");
+				PLTFM_MSG_WARN("[WARN]oqt buffer full, cnt = %d\n", cnt);
 				return status;
 			}
 
@@ -372,11 +365,7 @@ reg_r16_sdio_8822c(struct halmac_adapter *adapter, u32 offset)
 
 	if ((offset & 0xFFFF0000) == 0 &&
 	    adapter->halmac_state.mac_pwr == HALMAC_MAC_POWER_OFF) {
-		value16.byte[0] = (u8)r_indir_sdio_88xx(adapter, offset,
-							HALMAC_IO_BYTE);
-		value16.byte[1] = (u8)r_indir_sdio_88xx(adapter, offset + 1,
-							HALMAC_IO_BYTE);
-		return rtk_le16_to_cpu(value16.word);
+		return (u16)r_indir_sdio_88xx(adapter, offset, HALMAC_IO_WORD);
 	} else if ((offset & 0xFFFF0000) != 0 &&
 		   adapter->halmac_state.mac_pwr == HALMAC_MAC_POWER_OFF) {
 		value16.byte[0] = PLTFM_SDIO_CMD52_R(offset);
@@ -472,15 +461,7 @@ reg_r32_sdio_8822c(struct halmac_adapter *adapter, u32 offset)
 
 	if (((offset & 0xFFFF0000) == 0) &&
 	    adapter->halmac_state.mac_pwr == HALMAC_MAC_POWER_OFF) {
-		value32.byte[0] = (u8)r_indir_sdio_88xx(adapter, offset,
-							HALMAC_IO_BYTE);
-		value32.byte[1] = (u8)r_indir_sdio_88xx(adapter, offset + 1,
-							HALMAC_IO_BYTE);
-		value32.byte[2] = (u8)r_indir_sdio_88xx(adapter, offset + 2,
-							HALMAC_IO_BYTE);
-		value32.byte[3] = (u8)r_indir_sdio_88xx(adapter, offset + 3,
-							HALMAC_IO_BYTE);
-		return rtk_le32_to_cpu(value32.dword);
+		return r_indir_sdio_88xx(adapter, offset, HALMAC_IO_DWORD);
 	} else if (((offset & 0xFFFF0000) != 0) &&
 		   adapter->halmac_state.mac_pwr == HALMAC_MAC_POWER_OFF) {
 		value32.byte[0] = PLTFM_SDIO_CMD52_R(offset);
@@ -581,7 +562,7 @@ chk_oqt_8822c(struct halmac_adapter *adapter, u32 tx_agg_num, u8 *buf,
 	case HALMAC_QSEL_BK:
 	case HALMAC_QSEL_BK_V2:
 		if (macid_cnt > WLAN_ACQ_NUM_MAX &&
-		    tx_agg_num > OQT_ENTRY_AC_8822C) {
+		    tx_agg_num > (OQT_ENTRY_AC_8822C - 1)) {
 			PLTFM_MSG_WARN("[WARN]txagg num %d > oqt entry\n",
 				       tx_agg_num);
 			PLTFM_MSG_WARN("[WARN]macid cnt %d > acq max\n",
@@ -590,32 +571,35 @@ chk_oqt_8822c(struct halmac_adapter *adapter, u32 tx_agg_num, u8 *buf,
 
 		cnt = 10;
 		do {
-			if (fs_info->ac_empty >= macid_cnt) {
+			if (fs_info->ac_oqt_num == OQT_ENTRY_AC_8822C &&
+			    fs_info->ac_empty >= macid_cnt) {
 				fs_info->ac_empty -= macid_cnt;
 				break;
-			}
-
-			if (fs_info->ac_oqt_num >= tx_agg_num) {
+			} else if (fs_info->ac_oqt_num > tx_agg_num) {
 				fs_info->ac_empty = 0;
-				fs_info->ac_oqt_num -= (u8)tx_agg_num;
+				fs_info->ac_oqt_num = 0;
 				break;
 			}
 
 			update_oqt_free_space_8822c(adapter);
 
 			cnt--;
-			if (cnt == 0)
+			if (cnt == 0) {
+				PLTFM_MSG_WARN("ac_oqt_num %d, ac_empty %d, tx_agg_num %d, macid_cnt %d\n",
+					       fs_info->ac_oqt_num, fs_info->ac_empty, tx_agg_num, macid_cnt);
 				return HALMAC_RET_OQT_NOT_ENOUGH;
+			}
 		} while (1);
 		break;
 	case HALMAC_QSEL_MGNT:
 	case HALMAC_QSEL_HIGH:
-		if (tx_agg_num > OQT_ENTRY_NOAC_8822C)
+		if (tx_agg_num > (OQT_ENTRY_NOAC_8822C - 1))
 			PLTFM_MSG_WARN("[WARN]tx_agg_num %d > oqt entry\n",
 				       tx_agg_num);
 		cnt = 10;
 		do {
-			if (fs_info->non_ac_oqt_num >= tx_agg_num) {
+			if ((fs_info->non_ac_oqt_num > tx_agg_num) &&
+			    (fs_info->non_ac_oqt_num == OQT_ENTRY_NOAC_8822C)) {
 				fs_info->non_ac_oqt_num -= (u8)tx_agg_num;
 				break;
 			}
@@ -623,8 +607,11 @@ chk_oqt_8822c(struct halmac_adapter *adapter, u32 tx_agg_num, u8 *buf,
 			update_oqt_free_space_8822c(adapter);
 
 			cnt--;
-			if (cnt == 0)
+			if (cnt == 0) {
+				PLTFM_MSG_WARN("non_ac_oqt_num %d, tx_agg_num %d\n",
+					       fs_info->non_ac_oqt_num, tx_agg_num);
 				return HALMAC_RET_OQT_NOT_ENOUGH;
+			}
 		} while (1);
 		break;
 	default:
@@ -710,12 +697,13 @@ update_ac_empty_8822c(struct halmac_adapter *adapter, u8 value)
 	struct halmac_sdio_free_space *free_space;
 
 	free_space = &adapter->sdio_fs;
+	free_space->ac_empty = 0;
 
 	if (free_space->ac_oqt_num == OQT_ENTRY_AC_8822C) {
 		while (value > 0) {
 			value = value & (value - 1);
 			free_space->ac_empty++;
-		};
+		}
 	} else {
 		PLTFM_MSG_TRACE("[TRACE]free_space->ac_oqt_num %d != %d\n",
 				free_space->ac_oqt_num, OQT_ENTRY_AC_8822C);
@@ -782,6 +770,7 @@ get_sdio_tx_addr_8822c(struct halmac_adapter *adapter, u8 *buf, u32 size,
 {
 	u32 len_unit4, len_unit1, value32;
 	u16 block_size = adapter->sdio_hw_info.block_size;
+	u8 is_agg_len = 0;
 	struct halmac_sdio_hw_info *hw_info = &adapter->sdio_hw_info;
 	enum halmac_qsel queue_sel;
 	enum halmac_dma_mapping dma_mapping;
@@ -854,11 +843,23 @@ get_sdio_tx_addr_8822c(struct halmac_adapter *adapter, u8 *buf, u32 size,
 	if (hw_info->tx_addr_format == HALMAC_SDIO_AGG_MODE ||
 	    (hw_info->tx_addr_format == HALMAC_SDIO_DUMMY_AUTO_MODE &&
 	     len_unit1 < block_size)) {
-		*cmd53_addr = (*cmd53_addr << 13) |
-				(len_unit4 & HALMAC_SDIO_4BYTE_LEN_MASK);
+		is_agg_len = 1;
+	} else if (hw_info->tx_addr_format == HALMAC_SDIO_DUMMY_AUTO_MODE &&
+		   len_unit1 == block_size) {
+		if (hw_info->tx_512_by_byte_mode == 0)
+			is_agg_len = 0;
+		else
+			is_agg_len = 1;
 	} else if (hw_info->tx_addr_format == HALMAC_SDIO_DUMMY_BLOCK_MODE ||
 		   (hw_info->tx_addr_format == HALMAC_SDIO_DUMMY_AUTO_MODE &&
-		    len_unit1 >= block_size)) {
+		    len_unit1 > block_size)) {
+			is_agg_len = 0;
+	} else {
+		PLTFM_MSG_ERR("[ERR]tx_addr_format is undefined\n");
+		return HALMAC_RET_NOT_SUPPORT;
+	}
+
+	if (is_agg_len == 0) {
 		value32 = len_unit1 % block_size;
 		if (value32)
 			value32 = (block_size - value32) >> 2;
@@ -866,7 +867,8 @@ get_sdio_tx_addr_8822c(struct halmac_adapter *adapter, u8 *buf, u32 size,
 				((value32 & HALMAC_SDIO_4BYTE_LEN_MASK) << 1);
 		hw_info->tx_seq = ~hw_info->tx_seq & 0x01;
 	} else {
-		PLTFM_MSG_ERR("[ERR]tx_addr_format is undefined\n");
+		*cmd53_addr = (*cmd53_addr << 13) |
+				(len_unit4 & HALMAC_SDIO_4BYTE_LEN_MASK);
 	}
 
 	PLTFM_MSG_TRACE("[TRACE]%s <===\n", __func__);
@@ -1016,6 +1018,7 @@ chk_rqd_page_num_8822c(struct halmac_adapter *adapter, u8 *buf, u32 *rqd_pg_num,
 	u8 qsel_first;
 	u32 i, pkt_size;
 	enum halmac_ret_status status = HALMAC_RET_SUCCESS;
+	struct halmac_sdio_free_space *fs_info = &adapter->sdio_fs;
 
 	pkt = buf;
 
@@ -1024,6 +1027,13 @@ chk_rqd_page_num_8822c(struct halmac_adapter *adapter, u8 *buf, u32 *rqd_pg_num,
 	status = chk_dma_mapping_8822c(adapter, cur_fs, qsel_first);
 	if (status != HALMAC_RET_SUCCESS)
 		return status;
+
+	if (!fs_info->macid_map) {
+		PLTFM_MSG_ERR("[ERR]halmac allocate Macid_map Fail!!\n");
+		return HALMAC_RET_MALLOC_FAIL;
+	}
+
+	PLTFM_MEMSET(fs_info->macid_map, 0x00, fs_info->macid_map_size);
 
 	for (i = 0; i < tx_agg_num; i++) {
 		/*QSEL parser*/

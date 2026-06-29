@@ -191,10 +191,6 @@ static void enable_interrupt(PADAPTER adapter)
  */
 static void disable_interrupt(PADAPTER adapter)
 {
-	PHAL_DATA_TYPE hal;
-
-
-	hal = GET_HAL_DATA(adapter);
 
 	update_himr(adapter, 0);
 	RTW_INFO("%s: update SDIO HIMR=0\n", __FUNCTION__);
@@ -252,12 +248,8 @@ static void cancel_thread(PADAPTER adapter)
  */
 static u8 sethwreg(PADAPTER adapter, u8 variable, u8 *val)
 {
-	PHAL_DATA_TYPE hal;
 	u8 ret = _SUCCESS;
 	u8 val8;
-
-
-	hal = GET_HAL_DATA(adapter);
 
 	switch (variable) {
 	case HW_VAR_SET_RPWM:
@@ -334,11 +326,7 @@ static u8 sethwreg(PADAPTER adapter, u8 variable, u8 *val)
  */
 static void gethwreg(PADAPTER adapter, u8 variable, u8 *val)
 {
-	PHAL_DATA_TYPE hal;
 	u8 val8;
-
-
-	hal = GET_HAL_DATA(adapter);
 
 	switch (variable) {
 	case HW_VAR_CPWM:
@@ -377,11 +365,7 @@ static void gethwreg(PADAPTER adapter, u8 variable, u8 *val)
  */
 static u8 gethaldefvar(PADAPTER adapter, HAL_DEF_VARIABLE eVariable, void *pval)
 {
-	PHAL_DATA_TYPE hal;
 	u8 bResult = _SUCCESS;
-
-
-	hal = GET_HAL_DATA(adapter);
 
 	switch (eVariable) {
 	case HW_VAR_MAX_RX_AMPDU_FACTOR:
@@ -403,7 +387,6 @@ static u8 gethaldefvar(PADAPTER adapter, HAL_DEF_VARIABLE eVariable, void *pval)
  */
 static u8 sethaldefvar(PADAPTER adapter, HAL_DEF_VARIABLE eVariable, void *pval)
 {
-	PHAL_DATA_TYPE hal = GET_HAL_DATA(adapter);
 	u8 bResult = _SUCCESS;
 
 	switch (eVariable) {

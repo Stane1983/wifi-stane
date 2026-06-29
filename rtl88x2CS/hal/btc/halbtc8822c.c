@@ -61,7 +61,8 @@ static const struct btc_coex_table_para table_sant_8822c[] = {
 				{0xdaffdaff, 0xdaffdaff},
 				{0x6a555a5a, 0x5a5a5a5a},
 				{0xe5555555, 0xe5555555}, /*case-35*/
-				{0xea5a5a5a, 0xea5a5a5a} };
+				{0xea5a5a5a, 0xea5a5a5a},
+				{0xea6a6a6a, 0xea6a6a6a} };
 
 /* Non-Shared-Antenna Coex Table */
 static const struct btc_coex_table_para table_nsant_8822c[] = {
@@ -89,7 +90,7 @@ static const struct btc_coex_table_para table_nsant_8822c[] = {
 				{0x55ff55ff, 0x5afa5afa},
 				{0x55ff55ff, 0xaaaaaaaa},
 				{0x55ff55ff, 0x55ff55ff},
-				{0x6a555a5a, 0xfafafafa} };
+				{0x6f555f5f, 0xfafafafa} };
 
 /* Shared-Antenna TDMA*/
 static const struct btc_tdma_para tdma_sant_8822c[] = {
@@ -157,72 +158,74 @@ static const struct btc_tdma_para tdma_nsant_8822c[] = {
 static const struct btc_rf_para rf_para_tx_8822c[] = {
 				{0, 0, FALSE, 7},  /* for normal */
 				{0, 16, FALSE, 7}, /* for WL-CPT */
-				{16, 4, TRUE, 5},  /* 2 for RCU SDR */
-				{15, 5, TRUE, 5},
-				{7, 8, TRUE, 5},
+				{16, 4, TRUE, 4},  /* 2 for RCU SDR */
+				{15, 5, TRUE, 4},
+				{7, 8, TRUE, 4},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 5}, /* 6 for RCU OFC */
-				{15, 5, TRUE, 5},
-				{7, 8, TRUE, 5},
+				{16, 4, TRUE, 4}, /* 6 for RCU OFC */
+				{15, 5, TRUE, 4},
+				{7, 8, TRUE, 4},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 5}, /* 10 for A2DP SDR */
-				{15, 5, TRUE, 5},
-				{7, 8, TRUE, 5},
+				{16, 4, TRUE, 4}, /* 10 for A2DP SDR */
+				{15, 5, TRUE, 4},
+				{7, 8, TRUE, 4},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 5}, /* 14 for A2DP OFC */
-				{15, 5, TRUE, 5},
-				{7, 8, TRUE, 5},
+				{16, 4, TRUE, 4}, /* 14 for A2DP OFC */
+				{15, 5, TRUE, 4},
+				{7, 8, TRUE, 4},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 5}, /* 18 for A2DP+RCU SDR */
-				{15, 5, TRUE, 5},
-				{7, 8, TRUE, 5},
+				{16, 4, TRUE, 4}, /* 18 for A2DP+RCU SDR */
+				{15, 5, TRUE, 4},
+				{7, 8, TRUE, 4},
 				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 5}, /* 22 for A2DP+RCU OFC */
-				{15, 5, TRUE, 5},
-				{7, 8, TRUE, 5},
+				{16, 4, TRUE, 4}, /* 22 for A2DP+RCU OFC */
+				{15, 5, TRUE, 4},
+				{7, 8, TRUE, 4},
 				{6, 10, TRUE, 4} };
 
 static const struct btc_rf_para rf_para_rx_8822c[] = {
 				{0, 0, FALSE, 7},  /* for normal */
 				{0, 16, FALSE, 7}, /* for WL-CPT */
-				{14, 5, TRUE, 7}, /* 2 for RCU SDR */
-				{13, 6, TRUE, 7},
-				{6, 9, TRUE, 7},
+				{14, 5, TRUE, 5}, /* 2 for RCU SDR */
+				{13, 6, TRUE, 5},
+				{6, 9, TRUE, 5},
 				{4, 11, TRUE, 5},
-				{16, 4, TRUE, 7}, /* 6 for RCU OFC */
-				{15, 5, TRUE, 7},
-				{7, 8, TRUE, 7},
-				{6, 10, TRUE, 4},
-				{0, 4, TRUE, 7}, /* 10 for A2DP SDR */
-				{0, 5, TRUE, 7},
-				{7, 8, TRUE, 7},
-				{6, 10, TRUE, 4},
+				{16, 4, TRUE, 5}, /* 6 for RCU OFC */
+				{15, 5, TRUE, 5},
+				{7, 8, TRUE, 5},
+				{6, 10, TRUE, 5},
+				{16, 4, TRUE, 5}, /* 10 for A2DP SDR */
+				{15, 5, TRUE, 5},
+				{7, 8, TRUE, 5},
+				{6, 10, TRUE, 5},
 				{16, 4, TRUE, 5}, /* 14 for A2DP OFC */
 				{15, 5, TRUE, 5},
 				{7, 8, TRUE, 5},
-				{6, 10, TRUE, 4},
-				{16, 4, TRUE, 7}, /* 18 for A2DP+RCU SDR */
-				{15, 5, TRUE, 7},
+				{6, 10, TRUE, 5},
+				{16, 4, TRUE, 5}, /* 18 for A2DP+RCU SDR */
+				{15, 5, TRUE, 5},
 				{7, 8, TRUE, 5},
-				{6, 10, TRUE, 4},
-				{0, 4, TRUE, 5}, /* 22 for A2DP+RCU OFC */
-				{0, 5, TRUE, 5},
+				{6, 10, TRUE, 5},
+				{16, 4, TRUE, 5}, /* 22 for A2DP+RCU OFC */
+				{15, 5, TRUE, 5},
 				{7, 8, TRUE, 5},
-				{6, 10, TRUE, 4} };
+				{6, 10, TRUE, 5} };
 
 const struct btc_5g_afh_map afh_5g_8822c[] = { {0, 0, 0} };
 
 const struct btc_chip_para btc_chip_para_8822c = {
 	"8822c",				/*.chip_name */
-	20230210,				/*.para_ver_date */
-	0x27,					/*.para_ver */
+	20221118,				/*.para_ver_date */
+	0x30,					/*.para_ver */
 	0x20,					/* bt_desired_ver */
 	0x7001c,				/* wl_desired_ver */
 	TRUE,					/* scbd_support */
 	0xaa,					/* scbd_reg*/
 	BTC_SCBD_16_BIT,			/* scbd_bit_num */
+	FALSE,					/* le_audio_support */
 	TRUE,					/* mailbox_support*/
 	TRUE,					/* lte_indirect_access */
+	FALSE,					/* new_scbd9_def */
 	TRUE,					/* new_scbd10_def */
 	BTC_INDIRECT_1700,			/* indirect_type */
 	BTC_PSTDMA_FORCE_LPSOFF,		/* pstdma_type */

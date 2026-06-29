@@ -853,6 +853,7 @@ struct ieee80211_ht_addt_info {
 } __attribute__((packed));
 #endif
 
+#define HT_CAPS_IE_LEN 26 /*struct rtw_ieee80211_ht_cap */
 struct HT_caps_element {
 	union {
 		struct {
@@ -863,7 +864,7 @@ struct HT_caps_element {
 			unsigned int	Beamforming_caps;
 			unsigned char	ASEL_caps;
 		} HT_cap_element;
-		unsigned char HT_cap[26];
+		unsigned char HT_cap[HT_CAPS_IE_LEN];
 	} u;
 } __attribute__((packed));
 
@@ -1362,5 +1363,8 @@ struct rtw_regulatory {
 #define IW_ENCODE_ALG_SM4			0x20
 #endif
 #endif
+
+#define GET_MULTIPLE_BSSID_IDX_INDEX(_pEleStart) \
+	LE_BITS_TO_1BYTE((_pEleStart) + 2, 0, 8)
 
 #endif /* _WIFI_H_ */

@@ -804,7 +804,7 @@ void halrf_dack_restore_8822c(void *dm_void)
 	halrf_biask_restore_8822c(dm);
 }
 
-void halrf_polling_check(void *dm_void, u32 add, u32 bmask, u32 data)
+void halrf_polling_check_8822c(void *dm_void, u32 add, u32 bmask, u32 data)
 {
 	struct dm_struct *dm = (struct dm_struct *)dm_void;
 	u32 c = 0;
@@ -946,8 +946,8 @@ void halrf_dac_cal_8822c(void *dm_void, boolean force)
 //		ODM_delay_ms(20);
 		odm_write_4byte(dm, 0x18d4, 0x62000000);
 		ODM_delay_ms(1);
-		halrf_polling_check(dm, 0x2808, 0x7fff80, 0xffff);
-		halrf_polling_check(dm, 0x2834, 0x7fff80, 0xffff);
+		halrf_polling_check_8822c(dm, 0x2808, 0x7fff80, 0xffff);
+		halrf_polling_check_8822c(dm, 0x2834, 0x7fff80, 0xffff);
 		odm_write_4byte(dm, 0x18b8, 0x02000000);
 		ODM_delay_ms(1);
 		odm_write_4byte(dm, 0x18bc, 0x0008ff87);
@@ -1017,8 +1017,8 @@ void halrf_dac_cal_8822c(void *dm_void, boolean force)
 		odm_write_4byte(dm, 0x18b8, 0x62000000);
 		odm_write_4byte(dm, 0x18d4, 0x62000000);
 		ODM_delay_ms(1);
-		halrf_polling_check(dm, 0x2824, 0x07f80000, ic);
-		halrf_polling_check(dm, 0x2850, 0x07f80000, qc);
+		halrf_polling_check_8822c(dm, 0x2824, 0x07f80000, ic);
+		halrf_polling_check_8822c(dm, 0x2850, 0x07f80000, qc);
 		odm_write_4byte(dm, 0x18b8, 0x02000000);
 		ODM_delay_ms(1);
 		odm_set_bb_reg(dm, 0x18bc, 0xe, 0x3);
@@ -1148,8 +1148,8 @@ void halrf_dac_cal_8822c(void *dm_void, boolean force)
 		odm_write_4byte(dm, 0x41b8, 0x62000000);
 		odm_write_4byte(dm, 0x41d4, 0x62000000);
 		ODM_delay_ms(1);
-		halrf_polling_check(dm, 0x4508, 0x7fff80, 0xffff);
-		halrf_polling_check(dm, 0x4534, 0x7fff80, 0xffff);
+		halrf_polling_check_8822c(dm, 0x4508, 0x7fff80, 0xffff);
+		halrf_polling_check_8822c(dm, 0x4534, 0x7fff80, 0xffff);
 		odm_write_4byte(dm, 0x41b8, 0x02000000);
 		ODM_delay_ms(1);
 		odm_write_4byte(dm, 0x41bc, 0x0008ff87);
@@ -1218,8 +1218,8 @@ void halrf_dac_cal_8822c(void *dm_void, boolean force)
 		odm_write_4byte(dm, 0x41b8, 0x62000000);
 		odm_write_4byte(dm, 0x41d4, 0x62000000);
 		ODM_delay_ms(1);
-		halrf_polling_check(dm, 0x4524, 0x07f80000, ic);
-		halrf_polling_check(dm, 0x4550, 0x07f80000, qc);
+		halrf_polling_check_8822c(dm, 0x4524, 0x07f80000, ic);
+		halrf_polling_check_8822c(dm, 0x4550, 0x07f80000, qc);
 		odm_write_4byte(dm, 0x41b8, 0x02000000);
 		ODM_delay_ms(1);
 		odm_set_bb_reg(dm, 0x41bc, 0xe, 0x3);
@@ -1616,6 +1616,20 @@ void halrf_rfk_power_save_8822c(
 		else
 			odm_set_bb_reg(dm, R_0x1b08, BIT(7), 0x1);
 		}
+}
+
+u8 halrf_get_thermal_8822c(
+	void *dm_void,
+	u8 path)
+{
+	struct dm_struct *dm = (struct dm_struct *)dm_void;
+
+	odm_set_rf_reg(dm, (enum rf_path)path, RF_0x42, BIT(19), 0x1);
+	odm_set_rf_reg(dm, (enum rf_path)path, RF_0x42, BIT(19), 0x0);
+	odm_set_rf_reg(dm, (enum rf_path)path, RF_0x42, BIT(19), 0x1);
+	ODM_delay_us(15);
+
+	return (u8)odm_get_rf_reg(dm, (enum rf_path)path, RF_0x42, 0x0007e);
 }
 
 #endif /*(RTL8822C_SUPPORT == 0)*/

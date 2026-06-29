@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2007 - 2020 Realtek Corporation.
+ * Copyright(c) 2007 - 2023 Realtek Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -68,8 +68,11 @@ static int rtw_ro_ch_handler(_adapter *adapter, u8 *buf)
 	remain_ch = (u8)ieee80211_frequency_to_channel(roch_parm->ch.center_freq);
 	duration = roch_parm->duration;
 
-	RTW_INFO(FUNC_ADPT_FMT" ch:%u duration:%d, cookie:0x%llx\n"
-		, FUNC_ADPT_ARG(adapter), remain_ch, roch_parm->duration, roch_parm->cookie);
+	RTW_INFO(FUNC_ADPT_FMT" ch:%u duration:%d, cookie:0x%llx, "
+		 "op_ch:%u, union_ch:%u, cur_ch:%u\n",
+		 FUNC_ADPT_ARG(adapter), remain_ch, roch_parm->duration, roch_parm->cookie,
+		 rtw_get_oper_ch(adapter), rtw_mi_get_union_chan(adapter),
+		 pmlmeext->cur_channel);
 
 	if (roch_parm->wdev && roch_parm->cookie) {
 		if (prochinfo->ro_ch_wdev != roch_parm->wdev) {
@@ -92,8 +95,8 @@ static int rtw_ro_ch_handler(_adapter *adapter, u8 *buf)
 
 	#ifdef CONFIG_CONCURRENT_MODE
 	if (rtw_mi_check_status(adapter, MI_LINKED) && (0 != rtw_mi_get_union_chan(adapter))) {
-		if ((remain_ch != rtw_mi_get_union_chan(adapter))) {
-			if (remain_ch != pmlmeext->cur_channel
+		if (remain_ch != rtw_get_oper_ch(adapter)) {
+			if (rtw_get_oper_ch(adapter) == rtw_mi_get_union_chan(adapter)
 				#ifdef RTW_ROCH_BACK_OP
 				|| ATOMIC_READ(&pwdev_priv->switch_ch_to) == 1
 				#endif
@@ -123,7 +126,6 @@ static int rtw_ro_ch_handler(_adapter *adapter, u8 *buf)
 		if (check_fwstate(&adapter->mlmepriv, WIFI_ASOC_STATE) &&
                     remain_ch != pmlmeext->cur_channel)
 			rtw_leave_opch(adapter);
-
 	}
 
 	if (ready_on_channel == _TRUE) {

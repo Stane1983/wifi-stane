@@ -18,7 +18,7 @@
 
 #if defined(CONFIG_SDIO_HCI) || defined(CONFIG_GSPI_HCI)
 	#ifdef CONFIG_TX_AGGREGATION
-		#ifdef CONFIG_RTL8822C
+		#if defined(CONFIG_RTL8822C) || defined(CONFIG_RTL8822E)
 			#ifdef CONFIG_SDIO_TX_FORMAT_DUMMY_AUTO
 				#define MAX_XMITBUF_SZ	(51200)
 			#else
@@ -100,8 +100,10 @@
 	#define MAX_CMDBUF_SZ	(512 * 18)
 #elif defined(CONFIG_RTL8723D) && defined(CONFIG_LPS_POFF)
 	#define MAX_CMDBUF_SZ	(128*70) /*(8960)*/
-#elif defined(CONFIG_RTL8822C) && defined(CONFIG_WAR_OFFLOAD)
+#elif (defined(CONFIG_RTL8822C) || defined(CONFIG_RTL8822E)) && (defined(CONFIG_WAR_OFFLOAD) || defined(CONFIG_MDNS_OFFLOAD))
 	#define MAX_CMDBUF_SZ	(128*128) /*(16k) */
+#elif defined(CONFIG_RTL8723F) && defined(CONFIG_WAR_OFFLOAD)
+	#define MAX_CMDBUF_SZ	(128*64) /*(8192) */
 #else
 	#define MAX_CMDBUF_SZ	(5120)	/* (4096) */
 #endif
@@ -221,7 +223,7 @@ enum DEQUEUE_TYPE {
 	defined(CONFIG_RTL8710B) || defined(CONFIG_RTL8192F) ||\
 	defined(CONFIG_RTL8723F)
 	#define TXDESC_SIZE 40
-#elif defined(CONFIG_RTL8822B) || defined(CONFIG_RTL8822C)
+#elif defined(CONFIG_RTL8822B) || defined(CONFIG_RTL8822C) || defined(CONFIG_RTL8822E)
 	#define TXDESC_SIZE 48		/* HALMAC_TX_DESC_SIZE_8822B */
 #elif defined(CONFIG_RTL8821C)
 	#define TXDESC_SIZE 48		/* HALMAC_TX_DESC_SIZE_8821C */
@@ -250,7 +252,9 @@ enum DEQUEUE_TYPE {
 #endif
 
 #ifdef CONFIG_PCI_HCI
-	#if defined(CONFIG_RTL8192E) || defined(CONFIG_RTL8814A) || defined(CONFIG_RTL8822B) || defined(CONFIG_RTL8821C) || defined(CONFIG_RTL8822C) || defined(CONFIG_TRX_BD_ARCH)
+	#if defined(CONFIG_RTL8192E) || defined(CONFIG_RTL8814A) || defined(CONFIG_RTL8822B) \
+		|| defined(CONFIG_RTL8821C) || defined(CONFIG_RTL8822C) \
+		|| defined(CONFIG_RTL8822E) || defined(CONFIG_TRX_BD_ARCH)
 		/* this section is defined for buffer descriptor ring architecture */
 		#define TX_WIFI_INFO_SIZE (TXDESC_SIZE) /* it may add 802.11 hdr or others... */
 		/* tx desc and payload are in the same buf */
@@ -289,7 +293,9 @@ struct tx_buf_desc {
 #endif
 	unsigned int dword[TX_BUFFER_SEG_SIZE * (2 << TX_BUFFER_SEG_NUM)];
 } __packed;
-#elif (defined(CONFIG_RTL8192E) || defined(CONFIG_RTL8814A) || defined(CONFIG_RTL8822B) || defined(CONFIG_RTL8822C)) && defined(CONFIG_PCI_HCI) /* 8192ee or 8814ae */
+#elif (defined(CONFIG_RTL8192E) || defined(CONFIG_RTL8814A) || defined(CONFIG_RTL8822B) \
+	|| defined(CONFIG_RTL8822C) || defined(CONFIG_RTL8822E)) \
+	&& defined(CONFIG_PCI_HCI) /* 8192ee or 8814ae */
 /* 8192EE_TODO */
 struct tx_desc {
 	unsigned int txdw0;
@@ -538,6 +544,7 @@ struct  submit_ctx {
 	systime submit_time; /* */
 	u32 timeout_ms; /* <0: not synchronous, 0: wait forever, >0: up to ms waiting */
 	int status; /* status for operation */
+	void *rsp; /* rsp buffer allocated by handler */
 #ifdef PLATFORM_LINUX
 	struct completion done;
 #endif
@@ -894,6 +901,10 @@ extern struct xmit_frame *__rtw_alloc_cmdxmitframe_8192ee(struct xmit_priv *pxmi
 extern struct xmit_frame *__rtw_alloc_cmdxmitframe_8822be(struct xmit_priv *pxmitpriv,
 		enum cmdbuf_type buf_type);
 #define rtw_alloc_bcnxmitframe(p) __rtw_alloc_cmdxmitframe_8822be(p, CMDBUF_BEACON)
+#elif defined(CONFIG_RTL8822E) && defined(CONFIG_PCI_HCI)
+extern struct xmit_frame *__rtw_alloc_cmdxmitframe_8822ee(struct xmit_priv *pxmitpriv,
+		enum cmdbuf_type buf_type);
+#define rtw_alloc_bcnxmitframe(p) __rtw_alloc_cmdxmitframe_8822ee(p, CMDBUF_BEACON)
 #elif defined(CONFIG_RTL8822C) && defined(CONFIG_PCI_HCI)
 extern struct xmit_frame *__rtw_alloc_cmdxmitframe_8822ce(struct xmit_priv *pxmitpriv,
 		enum cmdbuf_type buf_type);
@@ -1012,7 +1023,7 @@ u8 rtw_get_tx_bw_bmp_of_vht_rate(struct dvobj_priv *dvobj, u8 rate, u8 max_bw);
 s16 rtw_adapter_get_oper_txpwr_max_mbm(_adapter *adapter, bool eirp);
 s16 rtw_rfctl_get_oper_txpwr_max_mbm(struct rf_ctl_t *rfctl, u8 ch, u8 bw, u8 offset, u8 ifbmp_mod, u8 if_op, bool eirp);
 s16 rtw_get_oper_txpwr_max_mbm(struct dvobj_priv *dvobj, bool erip);
-s16 rtw_rfctl_get_reg_max_txpwr_mbm(struct rf_ctl_t *rfctl, u8 ch, u8 bw, u8 offset, bool eirp);
+s16 rtw_rfctl_get_reg_max_txpwr_mbm(struct rf_ctl_t *rfctl, enum band_type band, u8 ch, u8 bw, u8 offset, bool eirp);
 
 u8 query_ra_short_GI(struct sta_info *psta, u8 bw);
 

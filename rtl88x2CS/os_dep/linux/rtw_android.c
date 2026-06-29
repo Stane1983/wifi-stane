@@ -349,6 +349,7 @@ int rtw_android_pno_enable(struct net_device *net, int pno_enable)
 				pwrctl->pscan_info = NULL;
 			}
 			#endif
+			pwrctl->pno_inited = _FALSE;
 		}
 		return 0;
 	} else
@@ -1163,7 +1164,8 @@ static void shutdown_card(void)
 	}
 
 #ifdef CONFIG_FWLPS_IN_IPS
-	LeaveAllPowerSaveMode(g_test_adapter);
+	if (rtw_is_fw_ips_mode(g_test_adapter) == _TRUE)
+		LeaveAllPowerSaveMode(g_test_adapter);
 #endif /* CONFIG_FWLPS_IN_IPS */
 
 #ifdef CONFIG_WOWLAN
