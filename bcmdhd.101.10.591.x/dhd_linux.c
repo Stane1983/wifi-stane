@@ -8857,7 +8857,7 @@ dhd_init_static_strs_array(dhd_pub_t *dhd, dhd_event_log_t *temp, char *str_file
 	fwpkg_info_t logpkg, *fwpkg = &dhdinfo->fwpkg;
 	osl_t *osh = dhd->osh;
 	FWPKG_FILE *fw = NULL;
-	int map_size = 0, rdlen, unit_type;
+	int map_size = 0, rdlen, unit_type = 0;
 	char *raw_fmts =  NULL;
 	uint32 logstrs_size = 0;
 	int error = 0;

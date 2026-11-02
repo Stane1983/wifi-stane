@@ -432,7 +432,7 @@ dev_wlc_intvar_get(
 	int error;
 
 	uint len;
-	uint data_null;
+	uint data_null = 0;
 
 	len = bcm_mkiovar(name, (char *)(&data_null), 0, (char *)(&var), sizeof(var.buf));
 	ASSERT(len);

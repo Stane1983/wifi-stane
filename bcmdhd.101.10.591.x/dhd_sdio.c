@@ -1242,7 +1242,7 @@ dhdsdio_set_wakeupctrl(dhd_bus_t *bus)
 	val = bcmsdh_cfg_read(bus->sdh, SDIO_FUNC_1, SBSDIO_FUNC1_WAKEUPCTRL, NULL);
 }
 
-#define KSO_DBG(x)
+#define KSO_DBG(x)	do {} while (0)
 /* XXX KSO set typically takes depending on resource up & number of
 * resources which were down. Max value is PMU_MAX_TRANSITION_DLY usec.
 * Currently the KSO attempt loop is such that, it waits

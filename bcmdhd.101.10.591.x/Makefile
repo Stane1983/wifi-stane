@@ -96,6 +96,7 @@ CONFIG_BCMDHD_TDLS := y
 # Amlogic
 ifeq ($(CONFIG_BCMDHD_AMLOGIC),y)
 	CROSS_COMPILE ?=aarch64-linux-gnu-
+	KERNEL_SRC ?= $(KDIR)
 	LINUXDIR := $(KERNEL_SRC)
 ifeq ($(CONFIG_BCMDHD_SDIO),y)
 	MODULE_NAME := dhd
@@ -626,8 +627,20 @@ endif
 ifeq ($(CONFIG_BCMDHD_REQUEST_FW),y)
 	DHDCFLAGS += -DDHD_LINUX_STD_FW_API
 	DHDCFLAGS += -DDHD_REQUEST_FW_PATH
+# CoreELEC: firmware and nvram files are installed to /usr/lib/firmware/brcm
+# (SDIO) and /usr/lib/firmware/brcm/pcie (PCIe), file names are selected by chip
+ifneq ($(CONFIG_BCMDHD_SDIO),)
+	BCMDHD_FW_DIR ?= /usr/lib/firmware/brcm/
+else ifneq ($(CONFIG_BCMDHD_PCIE),)
+	BCMDHD_FW_DIR ?= /usr/lib/firmware/brcm/pcie/
+endif
+ifneq ($(BCMDHD_FW_DIR),)
+	DHDCFLAGS += -DDHD_FW_NAME="\"$(BCMDHD_FW_DIR)\""
+	DHDCFLAGS += -DDHD_NVRAM_NAME="\"$(BCMDHD_FW_DIR)\""
+else
 	DHDCFLAGS += -DDHD_FW_NAME="\"fw_bcmdhd.bin\""
 	DHDCFLAGS += -DDHD_NVRAM_NAME="\"nvram.txt\""
+endif
 	DHDCFLAGS += -DDHD_CLM_NAME="\"clm_bcmdhd.blob\""
 	DHDCFLAGS += -DDHD_CONFIG_NAME="\"config.txt\""
 else
@@ -678,9 +691,11 @@ endif
 # Amlogic
 ifeq ($(CONFIG_BCMDHD_AMLOGIC),y)
 	DHDCFLAGS += -Wno-error -Wno-format-security
+	DHDCFLAGS += -Wno-implicit-fallthrough -Wno-strict-prototypes
+ifdef CONFIG_CC_IS_CLANG
 	DHDCFLAGS += -Wno-unknown-warning-option -Wno-sometimes-uninitialized
-	DHDCFLAGS += -Wno-parentheses-equality -Wno-implicit-fallthrough
-	DHDCFLAGS += -Wno-strict-prototypes
+	DHDCFLAGS += -Wno-parentheses-equality
+endif
 	DHDCFLAGS += -DCUSTOMER_HW_AMLOGIC
 	DHDCFLAGS := $(filter-out -DDHD_REQUEST_FW_PATH,$(DHDCFLAGS))
 ifneq ($(CONFIG_BCMDHD_SDIO),)
@@ -691,9 +706,12 @@ ifneq ($(CONFIG_BCMDHD_PCIE),)
 #	DHDCFLAGS += -DUSE_AML_PCIE_TEE_MEM
 	DHDCFLAGS := $(filter-out -DHW_OOB,$(DHDCFLAGS))
 endif
+# CoreELEC: static interfaces are not used (no Android HAL)
+	DHDCFLAGS := $(filter-out -DWL_STATIC_IF,$(DHDCFLAGS))
 endif
 
 ARCH ?= arm64
+M ?= $(CURDIR)
 BCMDHD_ROOT ?= $(src)
 #$(warning "BCMDHD_ROOT=$(BCMDHD_ROOT)")
 KERNEL_VER := $(shell cat $(LINUXDIR)/include/config/kernel.release)
@@ -719,15 +737,15 @@ modules_install:
 
 bcmdhd_pcie:
 	$(warning "building PCIe bcmdhd on kernel $(KERNEL_VER) .....")
-	$(MAKE) -C $(LINUXDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules CONFIG_BCMDHD=m CONFIG_BCMDHD_PCIE=y
+	$(MAKE) -C $(LINUXDIR) M=$(M) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules CONFIG_BCMDHD=m CONFIG_BCMDHD_PCIE=y
 
 bcmdhd_sdio:
 	$(warning "building SDIO bcmdhd on kernel $(KERNEL_VER) .....")
-	$(MAKE) -C $(LINUXDIR) M=$(M) modules
+	$(MAKE) -C $(LINUXDIR) M=$(M) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules CONFIG_BCMDHD=m CONFIG_BCMDHD_SDIO=y
 
 bcmdhd_usb:
 	$(warning "building USB bcmdhd on kernel $(KERNEL_VER) .....")
-	$(MAKE) -C $(LINUXDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules CONFIG_BCMDHD=m CONFIG_BCMDHD_USB=y
+	$(MAKE) -C $(LINUXDIR) M=$(M) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules CONFIG_BCMDHD=m CONFIG_BCMDHD_USB=y
 
 clean:
 	rm -rf *.o *.ko .*.o.d *.mod.c *~ .*.cmd *.o.cmd .*.o.cmd *.mod \
