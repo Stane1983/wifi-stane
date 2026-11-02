@@ -115,7 +115,7 @@ static __inline void RF_DBG(struct dm_struct *dm, int comp, char *fmt, ...)
 #endif
 }
 #else
-#define RF_DBG(dm, comp, fmt, args...)
+#define RF_DBG(dm, comp, fmt, args...)	do {} while (0)
 #endif
 
 #endif /*#if DBG*/

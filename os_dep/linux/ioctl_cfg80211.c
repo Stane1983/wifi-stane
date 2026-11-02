@@ -6971,7 +6971,7 @@ void rtw_cfg80211_external_auth_request(_adapter *padapter, union recv_frame *rf
 	struct cfg80211_external_auth_params params = {0};
 	struct net_device *netdev = wdev_to_ndev(wdev);
 
-	params.action = EXTERNAL_AUTH_START;
+	params.action = NL80211_EXTERNAL_AUTH_START;
 	_rtw_memcpy(params.bssid, get_my_bssid(&pmlmeinfo->network), ETH_ALEN);
 	params.ssid.ssid_len = pmlmeinfo->network.Ssid.SsidLength;
 	_rtw_memcpy(params.ssid.ssid, pmlmeinfo->network.Ssid.Ssid,

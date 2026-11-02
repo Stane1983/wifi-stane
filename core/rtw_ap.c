@@ -6150,7 +6150,7 @@ fwd_chk:
 			goto exit;
 	} else
 #endif
-	;
+	{ }
 
 	xframe = rtw_alloc_xmitframe(&adapter->xmitpriv, os_qid);
 	if (!xframe) {

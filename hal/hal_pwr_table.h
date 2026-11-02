@@ -35,7 +35,7 @@ struct lmt_reg_exc {
 	_list list;
 	char country[2];
 	u8 domain;
-	char reg_name[0];
+	char reg_name[];
 };
 
 struct lmt_2g_t {

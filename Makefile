@@ -17,7 +17,7 @@ EXTRA_CFLAGS += -Wno-unused-variable
 
 ############ ANDROID COMMON KERNEL ############
 # clang
-ifeq ($(CC), clang)
+ifeq ($(CONFIG_CC_IS_CLANG), y)
 EXTRA_CFLAGS += -Wno-uninitialized
 EXTRA_CFLAGS += -Wno-enum-conversion
 EXTRA_CFLAGS += -Wno-fortify-source
@@ -2645,6 +2645,8 @@ else
 export CONFIG_RTL8733BS = m
 
 all: modules
+
+M ?= $(CURDIR)
 
 modules:
 	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KSRC) M=$(M)  modules
